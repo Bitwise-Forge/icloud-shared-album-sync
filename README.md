@@ -15,6 +15,8 @@ docker run --rm \
 
 One shot — pulls the current album contents into `./photos/` and exits. Set `SYNC_INTERVAL_HOURS` if you want it to loop on its own.
 
+> **Pre-release:** the GHCR image starts publishing at `v0.1.0`. Until then, [build it yourself](#building-the-image) — the Dockerfile is in the repo and takes about 30 seconds.
+
 ## Docker Compose
 
 Compose is the recommended shape if you have more than one album. One service per album, each with its own URL, its own folder, and its own cadence:
@@ -78,6 +80,20 @@ export SHARED_ALBUM_URL='https://www.icloud.com/sharedalbum/#B2AJ...'
 export OUTPUT_DIR="$PWD/photos"
 python3 src/sync.py
 ```
+
+## Building the image
+
+If you'd rather build the image locally than pull from GHCR — for a private mirror, an air-gapped environment, or just because `v0.1.0` hasn't shipped yet — the Dockerfile is at the repo root and needs no build args:
+
+```bash
+git clone https://github.com/Bitwise-Forge/icloud-shared-album-sync
+cd icloud-shared-album-sync
+docker build -t icloud-shared-album-sync:local .
+```
+
+Then substitute `icloud-shared-album-sync:local` wherever the Quickstart and Compose examples show `ghcr.io/bitwise-forge/icloud-shared-album-sync:latest`.
+
+The resulting image is `~145 MB`, based on `python:3.13-slim`, and runs as a non-root `app` user (UID 1000) inside the container. Multi-architecture builds (`linux/amd64` + `linux/arm64`) work via `docker buildx` and a `docker-container` driver — that's how the published GHCR image is produced.
 
 ## Testing
 
