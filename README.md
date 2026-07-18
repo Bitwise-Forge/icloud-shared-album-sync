@@ -79,6 +79,31 @@ export OUTPUT_DIR="$PWD/photos"
 python3 src/sync.py
 ```
 
+## Testing
+
+Test suite runs with `pytest`. Set up a virtualenv once, install the dev deps, then run:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+pytest
+```
+
+With a coverage report:
+
+```bash
+pytest --cov=sync --cov-report=term-missing
+```
+
+Every filesystem test uses pytest's `tmp_path` fixture; every network call is stubbed via `monkeypatch`. The suite never touches Apple's real API or writes files outside the temp dir.
+
+Coverage groups:
+
+- **Pure logic:** URL parsing, best-derivative selection (photo, video, edge cases), collision-proof local filename generation, the managed-file naming regex.
+- **Shard resolution:** happy-path 200, 330 redirect via response header, missing-host error path.
+- **End-to-end `sync_album`:** creates the output directory; downloads every asset at the manifest's declared size; skips unchanged files on re-run; re-downloads on size mismatch; prunes orphans that match the tool's naming pattern; leaves manual (non-matching) files alone; honours `PRUNE_REMOVED=false`; handles filename collisions across contributors; prunes assets removed from the album on the next sync; handles an empty manifest.
+
 ## What it doesn't do (yet)
 
 - **Write contributor / caption / date sidecars.** The API exposes all three; a future release will write them alongside the media as JSON or XMP.

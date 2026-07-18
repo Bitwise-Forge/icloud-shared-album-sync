@@ -23,7 +23,9 @@ INITIAL_SHARD_PROBE = "23"
 
 # Local filenames get an 8-hex suffix derived from photoGuid — makes them
 # collision-proof across contributors and marks them as ours for pruning.
-_MANAGED_NAME_RE = re.compile(r"__[0-9a-f]{8}\.[^./]+$")
+# Extension optional: local_filename() drops the extension when the source
+# filename has none, and the regex has to still match what we produced.
+_MANAGED_NAME_RE = re.compile(r"__[0-9a-f]{8}(?:\.[^./]+)?$")
 
 log = logging.getLogger("sync")
 
@@ -34,6 +36,7 @@ def _configure_logging(level_name: str) -> None:
         level=level,
         format="%(asctime)s %(levelname)s %(message)s",
         datefmt="%Y-%m-%dT%H:%M:%S",
+        force=True,
     )
 
 
