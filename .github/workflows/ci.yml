@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-flight runs when a new commit lands on the same ref (typical
+# case: force-pushing to a PR branch). Saves runner minutes, avoids stale
+# checks turning red on a superseded commit.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least-privilege default. Individual jobs can widen if they need to.
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Lint, format, type-check, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.21"
+          enable-cache: true
+
+      - name: Sync dependencies (locked)
+        run: uv sync --frozen
+
+      - name: Ruff lint
+        run: uv run ruff check src tests
+
+      - name: Ruff format check
+        run: uv run ruff format --check src tests
+
+      - name: ty type check
+        run: uv run ty check
+
+      - name: pytest with 100% coverage gate
+        run: uv run pytest --cov=sync --cov-report=term-missing --cov-fail-under=100
