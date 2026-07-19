@@ -4,7 +4,7 @@ version = "0.0.0"
 description = "The shared album, backed up somewhere you actually control."
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [
     { name = "Bitwise Forge", email = "contact@bitwiseforge.com" },
 ]
@@ -50,7 +50,7 @@ exclude_lines = [
 ]
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 line-length = 100
 
 [tool.ruff.lint]

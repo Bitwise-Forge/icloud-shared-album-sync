@@ -1,7 +1,7 @@
 # icloud-shared-album-sync
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](./CODE_OF_CONDUCT.md)
 
 Keep a folder in sync with a public iCloud Shared Album — photos, videos, and all — using a tiny Docker image and a minimal Python + [httpx](https://www.python-httpx.org/) stack.
@@ -77,7 +77,7 @@ If you rely on this in production, pin a specific version tag rather than tracki
 
 ## Running from source
 
-Python 3.9 or newer, no runtime packages to install:
+Python 3.10 or newer, no runtime packages to install:
 
 ```bash
 export SHARED_ALBUM_URL='https://www.icloud.com/sharedalbum/#B2AJ...'
