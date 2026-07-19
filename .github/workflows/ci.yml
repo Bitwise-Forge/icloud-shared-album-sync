@@ -46,3 +46,29 @@ jobs:
 
       - name: pytest with 100% coverage gate
         run: uv run pytest --cov=sync --cov-report=term-missing --cov-fail-under=100
+
+  docker-build:
+    name: Docker multi-arch build (no push)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # PR-only. Merged main is already validated via the PR that merged it,
+    # and tagged releases go through release.yml which builds anyway.
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (for arm64 emulation on the amd64 runner)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
