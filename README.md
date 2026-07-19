@@ -101,12 +101,13 @@ The resulting image is `~145 MB`, based on `python:3.13-slim`, and runs as a non
 
 ## Testing
 
-Test suite runs with `pytest`. Set up a virtualenv once, install the dev deps, then run:
+Test suite runs with `pytest`. Set up a virtualenv once, install the dev deps, arm the pre-commit hook, then run:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
+pre-commit install
 pytest
 ```
 
@@ -115,6 +116,8 @@ With a coverage report:
 ```bash
 pytest --cov=sync --cov-report=term-missing
 ```
+
+The pre-commit hook runs [Ruff](https://docs.astral.sh/ruff/) (lint + format) and [ty](https://docs.astral.sh/ty/) (type check) on every commit. See [CONTRIBUTING.md](./CONTRIBUTING.md#quality-gate) for details.
 
 Every filesystem test uses pytest's `tmp_path` fixture; every network call is stubbed via `monkeypatch`. The suite never touches Apple's real API or writes files outside the temp dir.
 

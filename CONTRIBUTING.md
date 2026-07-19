@@ -27,7 +27,7 @@ Out of scope:
 
 ## Development setup
 
-Clone the repo and set up a Python virtualenv:
+Clone the repo, set up a Python virtualenv, install dev deps, and arm the pre-commit hook:
 
 ```bash
 git clone https://github.com/Bitwise-Forge/icloud-shared-album-sync
@@ -35,7 +35,10 @@ cd icloud-shared-album-sync
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
+pre-commit install
 ```
+
+`pre-commit install` is not optional. It arms the git hook that runs `ruff check`, `ruff format`, and `ty check` on every commit. If you skip it, your first PR will bounce off CI for issues you could have caught locally.
 
 Run the tests:
 
@@ -50,6 +53,33 @@ pytest --cov=sync --cov-report=term-missing
 ```
 
 Coverage is expected to stay at **100%**. Every new function or branch needs a test.
+
+## Quality gate
+
+Three tools run automatically on every commit (via pre-commit) and on every push (via CI):
+
+| Tool | Purpose | Config location |
+| --- | --- | --- |
+| [Ruff](https://docs.astral.sh/ruff/) `check` | Lint. Catches unused imports, dead code, common bug patterns, unsorted imports. | `[tool.ruff.lint]` in `pyproject.toml` |
+| [Ruff](https://docs.astral.sh/ruff/) `format` | Format. Opinionated, Black-compatible. Formatter output is authoritative. | `[tool.ruff.format]` in `pyproject.toml` |
+| [ty](https://docs.astral.sh/ty/) `check` | Type check. Fast, incremental, from the makers of Ruff and uv. | `[tool.ty]` in `pyproject.toml` |
+
+To run them manually before committing:
+
+```bash
+ruff check src tests           # lint
+ruff format --check src tests  # verify formatted
+ty check                       # type check
+```
+
+To auto-fix:
+
+```bash
+ruff check --fix src tests
+ruff format src tests
+```
+
+**Do not bypass with `git commit --no-verify`.** The same checks gate merges — you'll just discover the failure on GitHub instead of locally.
 
 ## Style expectations
 

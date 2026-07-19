@@ -19,13 +19,14 @@ import re
 import threading
 import time
 import urllib.error
+from email.message import Message
 
 import pytest
 
 import sync
 
-
 # ---------- fixture data (plain builders, not pytest fixtures) -------------
+
 
 def _stream_fixture():
     """A small manifest: one photo (two derivatives) + one video (three)."""
@@ -39,7 +40,7 @@ def _stream_fixture():
                 "contributorFullName": "Chris Human",
                 "caption": None,
                 "derivatives": {
-                    "342":  {"checksum": "cksum-photo-small", "fileSize": "1000"},
+                    "342": {"checksum": "cksum-photo-small", "fileSize": "1000"},
                     "2048": {"checksum": "cksum-photo-large", "fileSize": "50000"},
                 },
             },
@@ -48,9 +49,9 @@ def _stream_fixture():
                 "contributorFullName": "Kim Human",
                 "caption": "birthday!",
                 "derivatives": {
-                    "360p":        {"checksum": "cksum-video-small", "fileSize": "2000"},
-                    "720p":        {"checksum": "cksum-video-large", "fileSize": "100000"},
-                    "PosterFrame": {"checksum": "cksum-poster",      "fileSize": "500"},
+                    "360p": {"checksum": "cksum-video-small", "fileSize": "2000"},
+                    "720p": {"checksum": "cksum-video-large", "fileSize": "100000"},
+                    "PosterFrame": {"checksum": "cksum-poster", "fileSize": "500"},
                 },
             },
         ],
@@ -93,10 +94,7 @@ class _MockPostJson:
         self.calls.append((url, payload))
         if "webasseturls" in url:
             return 200, {}, self.asset_urls
-        if (
-            self.shard_probe_status != 200
-            and f"/p{sync.INITIAL_SHARD_PROBE}-" in url
-        ):
+        if self.shard_probe_status != 200 and f"/p{sync.INITIAL_SHARD_PROBE}-" in url:
             headers = {}
             if self.shard_host:
                 headers["X-Apple-MMe-Host"] = self.shard_host
@@ -106,6 +104,7 @@ class _MockPostJson:
 
 # ---------- extract_token --------------------------------------------------
 
+
 def test_extract_token_valid():
     assert (
         sync.extract_token("https://www.icloud.com/sharedalbum/#B2AJ0DiRHGf731D")
@@ -113,11 +112,14 @@ def test_extract_token_valid():
     )
 
 
-@pytest.mark.parametrize("url", [
-    "https://www.icloud.com/sharedalbum/",
-    "https://www.icloud.com/sharedalbum/#XYZ",
-    "https://www.icloud.com/sharedalbum/#",
-])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.icloud.com/sharedalbum/",
+        "https://www.icloud.com/sharedalbum/#XYZ",
+        "https://www.icloud.com/sharedalbum/#",
+    ],
+)
 def test_extract_token_rejects_invalid(url):
     with pytest.raises(ValueError):
         sync.extract_token(url)
@@ -125,13 +127,17 @@ def test_extract_token_rejects_invalid(url):
 
 # ---------- best_derivative_key --------------------------------------------
 
-@pytest.mark.parametrize("derivatives,expected", [
-    ({"342": {}, "1024": {}, "2048": {}}, "2048"),
-    ({"342": {}}, "342"),
-    ({"360p": {}, "720p": {}, "PosterFrame": {}}, "720p"),
-    ({"360p": {}, "PosterFrame": {}}, "360p"),
-    ({"480p": {}, "PosterFrame": {}}, "480p"),
-])
+
+@pytest.mark.parametrize(
+    "derivatives,expected",
+    [
+        ({"342": {}, "1024": {}, "2048": {}}, "2048"),
+        ({"342": {}}, "342"),
+        ({"360p": {}, "720p": {}, "PosterFrame": {}}, "720p"),
+        ({"360p": {}, "PosterFrame": {}}, "360p"),
+        ({"480p": {}, "PosterFrame": {}}, "480p"),
+    ],
+)
 def test_best_derivative_key(derivatives, expected):
     assert sync.best_derivative_key(derivatives) == expected
 
@@ -143,32 +149,33 @@ def test_best_derivative_key_unrecognized_shape_raises():
 
 # ---------- local_filename -------------------------------------------------
 
+
 def test_local_filename_is_deterministic():
-    assert (
-        sync.local_filename("GUID-X", "IMG_5744.JPG")
-        == sync.local_filename("GUID-X", "IMG_5744.JPG")
+    assert sync.local_filename("GUID-X", "IMG_5744.JPG") == sync.local_filename(
+        "GUID-X", "IMG_5744.JPG"
     )
 
 
 def test_local_filename_differs_by_guid():
-    assert (
-        sync.local_filename("GUID-A", "IMG_5744.JPG")
-        != sync.local_filename("GUID-B", "IMG_5744.JPG")
+    assert sync.local_filename("GUID-A", "IMG_5744.JPG") != sync.local_filename(
+        "GUID-B", "IMG_5744.JPG"
     )
 
 
 def test_local_filename_differs_by_source_name():
-    assert (
-        sync.local_filename("GUID-X", "IMG_5744.JPG")
-        != sync.local_filename("GUID-X", "IMG_5745.JPG")
+    assert sync.local_filename("GUID-X", "IMG_5744.JPG") != sync.local_filename(
+        "GUID-X", "IMG_5745.JPG"
     )
 
 
-@pytest.mark.parametrize("src,expected_ext", [
-    ("IMG.JPG", ".JPG"),
-    ("clip.mp4", ".mp4"),
-    ("archive.tar.gz", ".gz"),
-])
+@pytest.mark.parametrize(
+    "src,expected_ext",
+    [
+        ("IMG.JPG", ".JPG"),
+        ("clip.mp4", ".mp4"),
+        ("archive.tar.gz", ".gz"),
+    ],
+)
 def test_local_filename_preserves_extension(src, expected_ext):
     assert sync.local_filename("GUID-X", src).endswith(expected_ext)
 
@@ -194,34 +201,37 @@ def test_local_filename_output_matches_managed_pattern(src):
 
 # ---------- managed-name regex ---------------------------------------------
 
-@pytest.mark.parametrize("name,expected", [
-    # Matches
-    ("IMG_5744__a1b2c3d4.JPG", True),
-    ("clip__deadbeef.mp4", True),
-    ("archive__a1b2c3d4.gz", True),
-    ("raw__a1b2c3d4", True),          # no-extension case
-    # Rejections
-    ("IMG_5744.JPG", False),           # no suffix
-    ("IMG_5744__abc.JPG", False),      # hash too short
-    ("IMG_5744__a1b2c3d4e5.JPG", False),  # hash too long
-    ("IMG_5744__A1B2C3D4.JPG", False),  # uppercase hex — hashlib never emits this
-])
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        # Matches
+        ("IMG_5744__a1b2c3d4.JPG", True),
+        ("clip__deadbeef.mp4", True),
+        ("archive__a1b2c3d4.gz", True),
+        ("raw__a1b2c3d4", True),  # no-extension case
+        # Rejections
+        ("IMG_5744.JPG", False),  # no suffix
+        ("IMG_5744__abc.JPG", False),  # hash too short
+        ("IMG_5744__a1b2c3d4e5.JPG", False),  # hash too long
+        ("IMG_5744__A1B2C3D4.JPG", False),  # uppercase hex — hashlib never emits this
+    ],
+)
 def test_managed_name_regex(name, expected):
     assert bool(sync._MANAGED_NAME_RE.search(name)) is expected
 
 
 # ---------- build_download_url ---------------------------------------------
 
+
 def test_build_download_url_assembles_https_url():
     item = {"url_location": "cdn.example.com", "url_path": "/x/foo.jpg?sig=1"}
     locations = {"cdn.example.com": {"scheme": "https"}}
-    assert (
-        sync.build_download_url(item, locations)
-        == "https://cdn.example.com/x/foo.jpg?sig=1"
-    )
+    assert sync.build_download_url(item, locations) == "https://cdn.example.com/x/foo.jpg?sig=1"
 
 
 # ---------- resolve_shard --------------------------------------------------
+
 
 def test_resolve_shard_returns_initial_probe_on_200(monkeypatch):
     fake = _MockPostJson(_stream_fixture(), _asset_urls_fixture())
@@ -231,7 +241,8 @@ def test_resolve_shard_returns_initial_probe_on_200(monkeypatch):
 
 def test_resolve_shard_follows_330_via_header(monkeypatch):
     fake = _MockPostJson(
-        _stream_fixture(), _asset_urls_fixture(),
+        _stream_fixture(),
+        _asset_urls_fixture(),
         shard_probe_status=330,
         shard_host="p134-sharedstreams.icloud.com",
     )
@@ -241,8 +252,10 @@ def test_resolve_shard_follows_330_via_header(monkeypatch):
 
 def test_resolve_shard_raises_when_no_host_supplied(monkeypatch):
     fake = _MockPostJson(
-        _stream_fixture(), _asset_urls_fixture(),
-        shard_probe_status=330, shard_host=None,
+        _stream_fixture(),
+        _asset_urls_fixture(),
+        shard_probe_status=330,
+        shard_host=None,
     )
     monkeypatch.setattr(sync, "_post_json", fake)
     with pytest.raises(RuntimeError):
@@ -250,6 +263,7 @@ def test_resolve_shard_raises_when_no_host_supplied(monkeypatch):
 
 
 # ---------- sync_album end-to-end ------------------------------------------
+
 
 @pytest.fixture
 def album(tmp_path, monkeypatch):
@@ -324,14 +338,12 @@ def test_sync_downloaded_file_sizes_match_manifest(album):
 def test_sync_is_idempotent(album):
     album.run()
     before = {
-        n: os.path.getmtime(os.path.join(album.output_dir, n))
-        for n in os.listdir(album.output_dir)
+        n: os.path.getmtime(os.path.join(album.output_dir, n)) for n in os.listdir(album.output_dir)
     }
     time.sleep(0.05)  # let mtime granularity clear
     album.run()
     after = {
-        n: os.path.getmtime(os.path.join(album.output_dir, n))
-        for n in os.listdir(album.output_dir)
+        n: os.path.getmtime(os.path.join(album.output_dir, n)) for n in os.listdir(album.output_dir)
     }
     assert before == after
 
@@ -392,14 +404,16 @@ def test_sync_empty_manifest_prunes_all_managed_files(album):
 
 def test_sync_filename_collision_yields_distinct_local_files(album):
     stream = _stream_fixture()
-    stream["photos"].append({
-        "photoGuid": "GUID-PHOTO-DUP",
-        "contributorFullName": "Sibling",
-        "caption": None,
-        "derivatives": {
-            "2048": {"checksum": "cksum-photo-dup", "fileSize": "40000"},
-        },
-    })
+    stream["photos"].append(
+        {
+            "photoGuid": "GUID-PHOTO-DUP",
+            "contributorFullName": "Sibling",
+            "caption": None,
+            "derivatives": {
+                "2048": {"checksum": "cksum-photo-dup", "fileSize": "40000"},
+            },
+        }
+    )
     asset_urls = _asset_urls_fixture()
     asset_urls["items"]["cksum-photo-dup"] = {
         "url_location": "cdn.example.com",
@@ -415,6 +429,7 @@ def test_sync_filename_collision_yields_distinct_local_files(album):
 
 # ---------- _configure_logging ---------------------------------------------
 
+
 @pytest.fixture
 def restore_root_logger():
     """Snapshot root logger state so tests that mutate it don't leak."""
@@ -426,12 +441,15 @@ def restore_root_logger():
     root.level = level
 
 
-@pytest.mark.parametrize("level_name,expected", [
-    ("DEBUG", logging.DEBUG),
-    ("INFO", logging.INFO),
-    ("WARNING", logging.WARNING),
-    ("debug", logging.DEBUG),  # case-insensitive
-])
+@pytest.mark.parametrize(
+    "level_name,expected",
+    [
+        ("DEBUG", logging.DEBUG),
+        ("INFO", logging.INFO),
+        ("WARNING", logging.WARNING),
+        ("debug", logging.DEBUG),  # case-insensitive
+    ],
+)
 def test_configure_logging_sets_level(level_name, expected, restore_root_logger):
     sync._configure_logging(level_name)
     assert logging.getLogger().level == expected
@@ -443,6 +461,7 @@ def test_configure_logging_defaults_to_info_on_unknown(restore_root_logger):
 
 
 # ---------- _post_json -----------------------------------------------------
+
 
 class _FakeResponse:
     """Context-manager wrapper matching what urlopen returns on success."""
@@ -491,13 +510,15 @@ def test_post_json_reads_body_from_http_error(monkeypatch):
     """Apple's shard-redirect returns 330 as an HTTPError; the body still
     carries the correct host, so _post_json must return the error path."""
     error_body = b'{"X-Apple-MMe-Host": "p42-sharedstreams.icloud.com"}'
+    hdrs = Message()
+    hdrs["X-Apple-MMe-Host"] = "p42-sharedstreams.icloud.com"
 
     def fake_urlopen(_req):
         raise urllib.error.HTTPError(
             url="https://example.com",
             code=330,
             msg="Moved",
-            hdrs={"X-Apple-MMe-Host": "p42-sharedstreams.icloud.com"},
+            hdrs=hdrs,
             fp=io.BytesIO(error_body),
         )
 
@@ -510,6 +531,7 @@ def test_post_json_reads_body_from_http_error(monkeypatch):
 
 
 # ---------- fetch_stream / fetch_asset_urls error paths --------------------
+
 
 def test_fetch_stream_raises_on_non_200(monkeypatch):
     monkeypatch.setattr(sync, "_post_json", lambda url, payload: (500, {}, {"e": "x"}))
@@ -525,6 +547,7 @@ def test_fetch_asset_urls_raises_on_non_200(monkeypatch):
 
 # ---------- _prune_removed skips non-files ---------------------------------
 
+
 def test_prune_skips_directories_matching_pattern(tmp_path):
     # A subdirectory whose name matches the managed pattern should NOT be
     # removed — _prune_removed only removes regular files.
@@ -536,6 +559,7 @@ def test_prune_skips_directories_matching_pattern(tmp_path):
 
 
 # ---------- download -------------------------------------------------------
+
 
 def test_download_writes_response_bytes_to_disk(tmp_path, monkeypatch):
     payload = b"hello world" * 100
@@ -553,6 +577,7 @@ def test_download_writes_response_bytes_to_disk(tmp_path, monkeypatch):
 
 
 # ---------- _env -----------------------------------------------------------
+
 
 def test_env_returns_value_when_set(monkeypatch):
     monkeypatch.setenv("EXAMPLE_VAR", "hello")
@@ -580,10 +605,12 @@ def test_env_treats_empty_string_as_missing_when_required(monkeypatch):
 
 # ---------- _install_signal_handlers ---------------------------------------
 
+
 def test_install_signal_handlers_registers_sigterm_and_sigint(monkeypatch):
     calls = []
     monkeypatch.setattr(
-        sync.signal, "signal",
+        sync.signal,
+        "signal",
         lambda sig, handler: calls.append((sig, handler)),
     )
     sync._install_signal_handlers(threading.Event())
@@ -594,7 +621,8 @@ def test_install_signal_handlers_registers_sigterm_and_sigint(monkeypatch):
 def test_install_signal_handler_sets_stop_event_when_invoked(monkeypatch):
     captured_handlers = {}
     monkeypatch.setattr(
-        sync.signal, "signal",
+        sync.signal,
+        "signal",
         lambda sig, handler: captured_handlers.__setitem__(sig, handler),
     )
     stop = threading.Event()
@@ -606,6 +634,7 @@ def test_install_signal_handler_sets_stop_event_when_invoked(monkeypatch):
 
 
 # ---------- main() ---------------------------------------------------------
+
 
 @pytest.fixture
 def main_env(monkeypatch, tmp_path):
@@ -620,8 +649,11 @@ def main_env(monkeypatch, tmp_path):
 
 def test_main_one_shot_calls_sync_album_once_and_returns_zero(main_env):
     calls = []
-    main_env.setattr(sync, "sync_album",
-                     lambda url, output_dir, prune=True: calls.append((url, output_dir, prune)))
+    main_env.setattr(
+        sync,
+        "sync_album",
+        lambda url, output_dir, prune=True: calls.append((url, output_dir, prune)),
+    )
     assert sync.main() == 0
     assert len(calls) == 1
     assert calls[0][2] is True  # prune defaults to True
@@ -630,8 +662,9 @@ def test_main_one_shot_calls_sync_album_once_and_returns_zero(main_env):
 def test_main_honours_prune_removed_false(main_env):
     main_env.setenv("PRUNE_REMOVED", "false")
     seen_prune = []
-    main_env.setattr(sync, "sync_album",
-                     lambda url, output_dir, prune=True: seen_prune.append(prune))
+    main_env.setattr(
+        sync, "sync_album", lambda url, output_dir, prune=True: seen_prune.append(prune)
+    )
     sync.main()
     assert seen_prune == [False]
 
@@ -652,6 +685,7 @@ def test_main_returns_2_when_interval_is_not_numeric(main_env):
 def test_main_catches_and_logs_sync_exception(main_env, caplog):
     def failing(url, output_dir, prune=True):
         raise RuntimeError("boom")
+
     main_env.setattr(sync, "sync_album", failing)
     # _configure_logging calls basicConfig(force=True), which strips caplog's
     # handler. Patch it out for this test so caplog can observe the record.
@@ -674,9 +708,11 @@ def test_main_daemon_loop_exits_when_stop_wait_returns_true(main_env):
     main_env.setattr(sync.threading, "Event", ImmediateStopEvent)
 
     call_count = 0
+
     def fake_sync(url, output_dir, prune=True):
         nonlocal call_count
         call_count += 1
+
     main_env.setattr(sync, "sync_album", fake_sync)
 
     assert sync.main() == 0
@@ -700,10 +736,12 @@ def test_main_daemon_loop_exits_when_stop_set_before_next_iteration(main_env):
     main_env.setattr(sync.threading, "Event", CapturingEvent)
 
     call_count = 0
+
     def fake_sync(url, output_dir, prune=True):
         nonlocal call_count
         call_count += 1
         stop_holder["event"].set()  # signal during sync
+
     main_env.setattr(sync, "sync_album", fake_sync)
 
     assert sync.main() == 0
@@ -730,9 +768,11 @@ def test_main_daemon_loop_iterates_when_wait_returns_false(main_env):
     main_env.setattr(sync.threading, "Event", LoopThenStopEvent)
 
     call_count = 0
+
     def fake_sync(url, output_dir, prune=True):
         nonlocal call_count
         call_count += 1
+
     main_env.setattr(sync, "sync_album", fake_sync)
 
     assert sync.main() == 0
@@ -748,15 +788,17 @@ def test_main_daemon_loop_exits_via_while_condition(main_env):
 
     class WaitSetsAndReturnsFalse(threading.Event):
         def wait(self, timeout=None):
-            self.set()      # simulate: signal fires in the sleep gap
-            return False    # but wait() itself reports 'timed out'
+            self.set()  # simulate: signal fires in the sleep gap
+            return False  # but wait() itself reports 'timed out'
 
     main_env.setattr(sync.threading, "Event", WaitSetsAndReturnsFalse)
 
     call_count = 0
+
     def fake_sync(url, output_dir, prune=True):
         nonlocal call_count
         call_count += 1
+
     main_env.setattr(sync, "sync_album", fake_sync)
 
     assert sync.main() == 0

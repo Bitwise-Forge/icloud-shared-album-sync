@@ -15,8 +15,9 @@ The API this tool talks to (`sharedstreams.icloud.com`) is undocumented and unof
 ├── tests/test_sync.py         # Pytest suite. 100% line + branch coverage.
 ├── Dockerfile                 # python:3.13-slim + non-root app user (uid 1000).
 ├── .dockerignore
-├── pyproject.toml             # Pytest + coverage config.
-├── requirements-dev.txt       # pytest, pytest-cov. Dev-only.
+├── pyproject.toml             # Pytest, coverage, ruff, and ty config.
+├── requirements-dev.txt       # pytest, pytest-cov, ruff, ty, pre-commit.
+├── .pre-commit-config.yaml    # Git hook: ruff check + format, ty check.
 ├── .editorconfig              # 4-sp Python, 2-sp YAML, LF, no trailing WS.
 ├── .github/
 │   ├── ISSUE_TEMPLATE/        # YAML forms.
@@ -34,16 +35,17 @@ The API this tool talks to (`sharedstreams.icloud.com`) is undocumented and unof
 
 1. **`src/sync.py` uses only the Python standard library.** No runtime pip deps. Ever. If a feature seems to require one, stop and discuss with the maintainer first.
 2. **Test coverage stays at 100%** — line and branch, measured by `pytest --cov=sync --cov-report=term-missing`. Every new function, branch, or behavior gets a test.
-3. **Do not commit `photos/`, credentials, or real album URLs** beyond the shared test URL already used in the repo. `.gitignore` covers `photos/` — do not weaken it.
-4. **Do not change Apple API request shapes on the strength of tests alone.** The suite mocks `sync._post_json` and `sync.download`. A change that passes tests but has never touched the real API will ship a regression.
-5. **The managed-file naming pattern is load-bearing.** `local_filename()` writes files as `<base>__<8hex>[.ext]`. `_MANAGED_NAME_RE` matches those, and *only* those, for pruning. If either side moves, both must move together, and the round-trip test must still pass.
+3. **`ruff check`, `ruff format`, and `ty check` all pass.** These are enforced by pre-commit hooks locally and by CI. Do not bypass with `git commit --no-verify` — the same checks gate merges. Formatter output is authoritative; do not hand-format against it.
+4. **Do not commit `photos/`, credentials, or real album URLs** beyond the shared test URL already used in the repo. `.gitignore` covers `photos/` — do not weaken it.
+5. **Do not change Apple API request shapes on the strength of tests alone.** The suite mocks `sync._post_json` and `sync.download`. A change that passes tests but has never touched the real API will ship a regression.
+6. **The managed-file naming pattern is load-bearing.** `local_filename()` writes files as `<base>__<8hex>[.ext]`. `_MANAGED_NAME_RE` matches those, and *only* those, for pruning. If either side moves, both must move together, and the round-trip test must still pass.
 
 ## Ask before doing
 
 - Adding a third-party runtime dependency
 - Changing the shape of Apple API requests or response parsing
 - Introducing a package structure (`src/icloud_shared_album_sync/...`)
-- Adding a linter, formatter, or type checker
+- Changing lint / format / type-check rules (`[tool.ruff]` or `[tool.ty]` in `pyproject.toml`)
 - Changing the license, the scope statement, or the copyright holder
 - Breaking backward compatibility of env vars or the `_MANAGED_NAME_RE` pattern
 
@@ -62,11 +64,23 @@ The API this tool talks to (`sharedstreams.icloud.com`) is undocumented and unof
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
+pre-commit install    # arms the git hook — do NOT skip this step
 ```
+
+After `pre-commit install`, every `git commit` runs `ruff check`, `ruff format`, and `ty check` against staged files. Bad commits are blocked locally *before* they hit the remote.
 
 ## Common commands
 
 ```bash
+# Run the full quality gate (same checks pre-commit runs)
+ruff check src tests
+ruff format --check src tests
+ty check
+
+# Auto-fix lint findings and reformat
+ruff check --fix src tests
+ruff format src tests
+
 # Run the tests
 pytest
 
@@ -107,6 +121,9 @@ docker buildx rm isas-multi
 
 ## Coding conventions
 
+- **Formatter output is authoritative.** `ruff format` decides quote style, line breaks, spacing. Do not fight it. If a formatting choice feels wrong, discuss the config, don't manually override.
+- **Lint rules are set in `pyproject.toml`** under `[tool.ruff.lint]`. Current active groups: `E`, `F`, `I`, `UP`, `B`, `SIM`, `RUF`. Adding or removing groups is an "ask first" change.
+- **Type checker is `ty`.** Configured in `pyproject.toml` under `[tool.ty]`. When it flags a type mismatch, fix the root cause (use the correct type, not `# type: ignore`) unless the type stub is genuinely wrong.
 - **Comments explain *why*, not *what*.** Delete comments that restate code. Keep comments that record an invariant, a workaround, or a non-obvious constraint.
 - **Type hints stay light.** Public functions have return types and parameter types for public callers; internal helpers don't need full typing. Do not add defensive hints.
 - **Logging levels:**

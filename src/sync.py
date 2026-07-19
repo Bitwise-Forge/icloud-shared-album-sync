@@ -83,10 +83,7 @@ def resolve_shard(token: str) -> str:
 
 
 def fetch_stream(shard: str, token: str) -> dict:
-    url = (
-        APPLE_SHARDS_HOST_TEMPLATE.format(shard=shard)
-        + f"/{token}/sharedstreams/webstream"
-    )
+    url = APPLE_SHARDS_HOST_TEMPLATE.format(shard=shard) + f"/{token}/sharedstreams/webstream"
     status, _, body = _post_json(url, {"streamCtag": None})
     if status != 200:
         raise RuntimeError(f"webstream failed: status={status} body={body}")
@@ -94,10 +91,7 @@ def fetch_stream(shard: str, token: str) -> dict:
 
 
 def fetch_asset_urls(shard: str, token: str, photo_guids: list) -> dict:
-    url = (
-        APPLE_SHARDS_HOST_TEMPLATE.format(shard=shard)
-        + f"/{token}/sharedstreams/webasseturls"
-    )
+    url = APPLE_SHARDS_HOST_TEMPLATE.format(shard=shard) + f"/{token}/sharedstreams/webasseturls"
     status, _, body = _post_json(url, {"photoGuids": photo_guids})
     if status != 200:
         raise RuntimeError(f"webasseturls failed: status={status} body={body}")
@@ -185,11 +179,7 @@ def sync_album(url: str, output_dir: str, prune: bool = True) -> None:
         dest = os.path.join(output_dir, filename)
 
         expected_size = int(deriv.get("fileSize", 0))
-        if (
-            os.path.exists(dest)
-            and expected_size
-            and os.path.getsize(dest) == expected_size
-        ):
+        if os.path.exists(dest) and expected_size and os.path.getsize(dest) == expected_size:
             log.debug("skip %s (already %d bytes)", filename, expected_size)
             skipped += 1
             continue
@@ -210,7 +200,10 @@ def sync_album(url: str, output_dir: str, prune: bool = True) -> None:
     pruned = _prune_removed(output_dir, expected_names) if prune else 0
     log.info(
         "done downloaded=%d skipped=%d pruned=%d output=%s",
-        downloaded, skipped, pruned, output_dir,
+        downloaded,
+        skipped,
+        pruned,
+        output_dir,
     )
 
 

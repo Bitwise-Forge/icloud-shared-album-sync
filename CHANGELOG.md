@@ -27,9 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `app` user (UID 1000).
 - Multi-arch (`linux/amd64` + `linux/arm64`) buildability via `docker buildx`.
 - Pytest test suite with 100% line and branch coverage (72 tests).
+- Quality gate enforced via pre-commit: [Ruff](https://docs.astral.sh/ruff/)
+  for lint + format, [ty](https://docs.astral.sh/ty/) for type checking.
+  Same tools run in CI so `--no-verify` bypasses don't save you.
 - Contribution documentation: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`
-  (Contributor Covenant v2.1), `SECURITY.md`, pull-request template, bug and
-  feature-request issue templates.
+  (Contributor Covenant v2.1), `SECURITY.md`, `AGENTS.md` (AI coding-tool
+  onboarding), pull-request template, bug and feature-request issue
+  templates.
 
 ### Known limitations
 
