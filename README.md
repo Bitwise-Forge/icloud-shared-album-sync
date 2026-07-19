@@ -1,5 +1,9 @@
 # icloud-shared-album-sync
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
+[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](./CODE_OF_CONDUCT.md)
+
 Keep a folder in sync with a public iCloud Shared Album — photos, videos, and all — using a tiny Docker image with zero third-party dependencies.
 
 Point it at a Shared Album URL, mount a folder, and let it run. Anything anyone adds to the album shows up in the folder on the next sync. Delete something from the album and it disappears locally too. Great for digital picture frames, family photo backups, or any workflow that ends with "…and now I want those photos on my server."
@@ -140,3 +144,7 @@ MIT — see [LICENSE](./LICENSE).
 This is a community-supported open source project. Issues and pull requests are welcome; there is no SLA and no obligation to fix. If you find a bug, open an issue with the log output and (if you can share it) the album URL that triggered it.
 
 Built and maintained by [Bitwise Forge](https://bitwiseforge.com).
+
+---
+
+<sub>iCloud and Apple are trademarks of Apple Inc., registered in the U.S. and other countries. This project is not affiliated with, endorsed by, or sponsored by Apple Inc.</sub>
