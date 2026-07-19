@@ -3,7 +3,7 @@
 # --- builder ------------------------------------------------------------
 # Install runtime deps into a venv using uv. Kept in a separate stage so
 # uv itself doesn't ship in the runtime image.
-FROM python:3.13-slim AS builder
+FROM python:3.14-slim AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /usr/local/bin/uv
 
@@ -15,7 +15,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 # --- runtime ------------------------------------------------------------
-FROM python:3.13-slim
+FROM python:3.14-slim
 
 LABEL org.opencontainers.image.source="https://github.com/Bitwise-Forge/icloud-shared-album-sync"
 LABEL org.opencontainers.image.description="The shared album, backed up somewhere you actually control."
