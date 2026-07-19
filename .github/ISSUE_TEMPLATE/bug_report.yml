@@ -1,0 +1,71 @@
+name: Bug report
+description: The tool didn't do what it was supposed to.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. The more detail you can share,
+        the faster we can reproduce and fix it.
+
+        Before filing, please search existing issues to avoid duplicates.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you see, and what did you expect to see instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: |
+        A minimal recipe. If you can share the album URL, please do — otherwise
+        describe the album (photo count, mix of photos/videos, number of
+        contributors, whether any assets have unusual filenames).
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log output
+      description: |
+        Run with `LOG_LEVEL=DEBUG` and paste the relevant output. Redact any
+        Shared Album URL you don't want to share publicly.
+      render: text
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: |
+        The image tag (e.g. `v0.1.0`, or `sha256:...` if pinned) or the git
+        commit SHA if you built from source.
+      placeholder: v0.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: |
+        Host OS + architecture, Docker version, and whether you're running in
+        daemon mode (`SYNC_INTERVAL_HOURS > 0`) or single-shot.
+      placeholder: Ubuntu 24.04, x86_64, Docker 27.1, daemon mode with SYNC_INTERVAL_HOURS=12
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: agreement
+    attributes:
+      label: Agreements
+      options:
+        - label: I have searched existing issues and this is not a duplicate.
+          required: true
+        - label: I agree to follow this project's [Code of Conduct](../blob/main/CODE_OF_CONDUCT.md).
+          required: true

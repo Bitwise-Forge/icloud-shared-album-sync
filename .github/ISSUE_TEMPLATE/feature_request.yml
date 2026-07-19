@@ -1,0 +1,50 @@
+name: Feature request
+description: Propose a change or addition.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, please check the
+        [Scope section of CONTRIBUTING.md](../blob/main/CONTRIBUTING.md#scope).
+        Requests that fall outside scope (authenticated albums, full library
+        sync, third-party runtime dependencies) will be closed with an
+        explanation.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: |
+        What are you trying to accomplish that the tool doesn't currently
+        support? Focus on the underlying need, not a specific implementation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: |
+        How would you like the tool to behave? A rough sketch is fine — you
+        don't need a full design.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: |
+        What else did you try or think about? A workaround you're using now?
+        Another tool that does this well?
+
+  - type: checkboxes
+    id: agreement
+    attributes:
+      label: Agreements
+      options:
+        - label: I have read the [Scope section](../blob/main/CONTRIBUTING.md#scope) and believe this request is in scope.
+          required: true
+        - label: I agree to follow this project's [Code of Conduct](../blob/main/CODE_OF_CONDUCT.md).
+          required: true

@@ -125,9 +125,15 @@ Coverage groups:
 - **Write contributor / caption / date sidecars.** The API exposes all three; a future release will write them alongside the media as JSON or XMP.
 - **Handle private (non-public) Shared Albums.** Only works with albums that have the "Public Website" toggle enabled.
 
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md) for setup, expectations, and the scope guide. Participation is governed by the [Code of Conduct](./CODE_OF_CONDUCT.md). Security issues should be reported privately per [SECURITY.md](./SECURITY.md).
+
+Changes per release are tracked in [CHANGELOG.md](./CHANGELOG.md).
+
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](./LICENSE).
 
 ## Support
 

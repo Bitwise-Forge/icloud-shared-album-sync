@@ -1,0 +1,43 @@
+version: 2
+updates:
+  # Dev dependencies (pytest, pytest-cov). Runtime code is stdlib-only.
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - python
+    commit-message:
+      prefix: "dev-deps"
+      include: scope
+
+  # Docker base image (python:3.13-slim). Pinned in the Dockerfile FROM line.
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - docker
+    commit-message:
+      prefix: "docker"
+      include: scope
+
+  # Actions used in .github/workflows once we add CI.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - ci
+    commit-message:
+      prefix: "ci"
+      include: scope
