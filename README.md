@@ -1,5 +1,7 @@
 # icloud-shared-album-sync
 
+[![CI](https://github.com/Bitwise-Forge/icloud-shared-album-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/Bitwise-Forge/icloud-shared-album-sync/actions/workflows/ci.yml)
+[![Coverage: 100%](https://img.shields.io/badge/coverage-100%25-brightgreen.svg)](https://github.com/Bitwise-Forge/icloud-shared-album-sync/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](./CODE_OF_CONDUCT.md)
@@ -18,8 +20,6 @@ docker run --rm \
 ```
 
 One shot — pulls the current album contents into `./photos/` and exits. Set `SYNC_INTERVAL_HOURS` if you want it to loop on its own.
-
-> **Pre-release:** the GHCR image starts publishing at `v0.1.0`. Until then, [build it yourself](#building-the-image) — the Dockerfile is in the repo and takes about 30 seconds.
 
 ## Docker Compose
 
@@ -93,7 +93,7 @@ uv run src/sync.py
 
 ## Building the image
 
-If you'd rather build the image locally than pull from GHCR — for a private mirror, an air-gapped environment, or just because `v0.1.0` hasn't shipped yet — the Dockerfile is at the repo root and needs no build args:
+If you'd rather build the image locally than pull from GHCR — for a private mirror, an air-gapped environment, or just to hack on the code — the Dockerfile is at the repo root and needs no build args:
 
 ```bash
 git clone https://github.com/Bitwise-Forge/icloud-shared-album-sync
@@ -103,7 +103,7 @@ docker build -t icloud-shared-album-sync:local .
 
 Then substitute `icloud-shared-album-sync:local` wherever the Quickstart and Compose examples show `ghcr.io/bitwise-forge/icloud-shared-album-sync:latest`.
 
-The resulting image is `~145 MB`, based on `python:3.13-slim`, and runs as a non-root `app` user (UID 1000) inside the container. Multi-architecture builds (`linux/amd64` + `linux/arm64`) work via `docker buildx` and a `docker-container` driver — that's how the published GHCR image is produced.
+The resulting image is `~146 MB`, based on `python:3.14-slim`, and runs as a non-root `app` user (UID 1000) inside the container. Multi-architecture builds (`linux/amd64` + `linux/arm64`) work via `docker buildx` and a `docker-container` driver — that's how the published GHCR image is produced.
 
 ## Testing
 

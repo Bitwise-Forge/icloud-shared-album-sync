@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-19
+
+Initial public release.
+
 ### Added
 
 - Python scraper for public iCloud Shared Albums (`src/sync.py`) using
@@ -26,11 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never touched.
 - Signal-clean daemon loop when `SYNC_INTERVAL_HOURS > 0`. `SIGTERM` /
   `SIGINT` drain gracefully.
-- Docker image based on `python:3.13-slim` (~145 MB), running as a non-root
+- Docker image based on `python:3.14-slim` (~146 MB), running as a non-root
   `app` user (UID 1000).
-- Multi-arch (`linux/amd64` + `linux/arm64`) buildability via `docker buildx`.
+- Multi-arch (`linux/amd64` + `linux/arm64`) image published to
+  `ghcr.io/bitwise-forge/icloud-shared-album-sync`. Each release ships with
+  SLSA build provenance and an SPDX SBOM attached.
 - Pytest test suite with 100% line and branch coverage (72 tests).
-- Quality gate enforced via pre-commit: [Ruff](https://docs.astral.sh/ruff/)
+- Quality gate enforced via pre-commit and CI: [Ruff](https://docs.astral.sh/ruff/)
   for lint + format, [ty](https://docs.astral.sh/ty/) for type checking.
   Same tools run in CI so `--no-verify` bypasses don't save you.
 - [uv](https://docs.astral.sh/uv/) as the environment and dependency manager.
@@ -48,4 +54,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Only public Shared Albums are supported. Private (auth-required) albums are
   out of scope by design.
 
-[Unreleased]: https://github.com/Bitwise-Forge/icloud-shared-album-sync/compare/HEAD...HEAD
+[Unreleased]: https://github.com/Bitwise-Forge/icloud-shared-album-sync/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Bitwise-Forge/icloud-shared-album-sync/releases/tag/v0.1.0
