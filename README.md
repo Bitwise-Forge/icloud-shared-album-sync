@@ -77,12 +77,18 @@ If you rely on this in production, pin a specific version tag rather than tracki
 
 ## Running from source
 
-Python 3.9 or newer, no packages to install:
+Python 3.9 or newer, no runtime packages to install:
 
 ```bash
 export SHARED_ALBUM_URL='https://www.icloud.com/sharedalbum/#B2AJ...'
 export OUTPUT_DIR="$PWD/photos"
 python3 src/sync.py
+```
+
+Or via the project's uv-managed environment:
+
+```bash
+uv run src/sync.py
 ```
 
 ## Building the image
@@ -101,20 +107,18 @@ The resulting image is `~145 MB`, based on `python:3.13-slim`, and runs as a non
 
 ## Testing
 
-Test suite runs with `pytest`. Set up a virtualenv once, install the dev deps, arm the pre-commit hook, then run:
+Test suite runs with `pytest`. The project uses [uv](https://docs.astral.sh/uv/) for environment and dependency management — install uv once ([install guide](https://docs.astral.sh/uv/getting-started/installation/)), then:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements-dev.txt
-pre-commit install
-pytest
+uv sync                          # create venv, install locked deps
+uv run pre-commit install        # arm the quality-gate git hook
+uv run pytest                    # run the tests
 ```
 
 With a coverage report:
 
 ```bash
-pytest --cov=sync --cov-report=term-missing
+uv run pytest --cov=sync --cov-report=term-missing
 ```
 
 The pre-commit hook runs [Ruff](https://docs.astral.sh/ruff/) (lint + format) and [ty](https://docs.astral.sh/ty/) (type check) on every commit. See [CONTRIBUTING.md](./CONTRIBUTING.md#quality-gate) for details.

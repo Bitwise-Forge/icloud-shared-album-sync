@@ -27,29 +27,29 @@ Out of scope:
 
 ## Development setup
 
-Clone the repo, set up a Python virtualenv, install dev deps, and arm the pre-commit hook:
+The project uses [uv](https://docs.astral.sh/uv/) for environment and dependency management. Install uv once ([install guide](https://docs.astral.sh/uv/getting-started/installation/)), then:
 
 ```bash
 git clone https://github.com/Bitwise-Forge/icloud-shared-album-sync
 cd icloud-shared-album-sync
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements-dev.txt
-pre-commit install
+uv sync                        # creates .venv/, installs dev deps from uv.lock
+uv run pre-commit install      # arms the quality-gate git hook
 ```
 
-`pre-commit install` is not optional. It arms the git hook that runs `ruff check`, `ruff format`, and `ty check` on every commit. If you skip it, your first PR will bounce off CI for issues you could have caught locally.
+`uv sync` reads `pyproject.toml` and `uv.lock` and produces a byte-identical environment across contributors and CI. `uv run <cmd>` runs commands inside that environment without needing to activate the venv.
+
+`pre-commit install` is not optional. It arms the git hook that runs `ruff check`, `ruff format`, and `ty check` on every commit. Skip it and your first PR will bounce off CI for issues you could have caught locally.
 
 Run the tests:
 
 ```bash
-pytest
+uv run pytest
 ```
 
 With coverage:
 
 ```bash
-pytest --cov=sync --cov-report=term-missing
+uv run pytest --cov=sync --cov-report=term-missing
 ```
 
 Coverage is expected to stay at **100%**. Every new function or branch needs a test.
@@ -67,16 +67,16 @@ Three tools run automatically on every commit (via pre-commit) and on every push
 To run them manually before committing:
 
 ```bash
-ruff check src tests           # lint
-ruff format --check src tests  # verify formatted
-ty check                       # type check
+uv run ruff check src tests           # lint
+uv run ruff format --check src tests  # verify formatted
+uv run ty check                       # type check
 ```
 
 To auto-fix:
 
 ```bash
-ruff check --fix src tests
-ruff format src tests
+uv run ruff check --fix src tests
+uv run ruff format src tests
 ```
 
 **Do not bypass with `git commit --no-verify`.** The same checks gate merges — you'll just discover the failure on GitHub instead of locally.

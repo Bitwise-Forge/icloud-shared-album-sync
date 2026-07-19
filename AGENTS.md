@@ -15,8 +15,9 @@ The API this tool talks to (`sharedstreams.icloud.com`) is undocumented and unof
 ├── tests/test_sync.py         # Pytest suite. 100% line + branch coverage.
 ├── Dockerfile                 # python:3.13-slim + non-root app user (uid 1000).
 ├── .dockerignore
-├── pyproject.toml             # Pytest, coverage, ruff, and ty config.
-├── requirements-dev.txt       # pytest, pytest-cov, ruff, ty, pre-commit.
+├── pyproject.toml             # Project metadata, dep groups, and tool config
+│                              # (pytest, coverage, ruff, ty, uv).
+├── uv.lock                    # Locked dep tree. Commit this. `uv sync` reads it.
 ├── .pre-commit-config.yaml    # Git hook: ruff check + format, ty check.
 ├── .editorconfig              # 4-sp Python, 2-sp YAML, LF, no trailing WS.
 ├── .github/
@@ -60,37 +61,45 @@ The API this tool talks to (`sharedstreams.icloud.com`) is undocumented and unof
 
 ## Development setup
 
+The project uses [uv](https://docs.astral.sh/uv/) for environment and dep management. Install uv once, then:
+
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements-dev.txt
-pre-commit install    # arms the git hook — do NOT skip this step
+uv sync                      # creates .venv/, installs locked deps
+uv run pre-commit install    # arms the git hook — do NOT skip
 ```
 
 After `pre-commit install`, every `git commit` runs `ruff check`, `ruff format`, and `ty check` against staged files. Bad commits are blocked locally *before* they hit the remote.
+
+Prefix commands with `uv run` to execute inside the project's environment without activating the venv. Old-school `source .venv/bin/activate` still works if you prefer.
 
 ## Common commands
 
 ```bash
 # Run the full quality gate (same checks pre-commit runs)
-ruff check src tests
-ruff format --check src tests
-ty check
+uv run ruff check src tests
+uv run ruff format --check src tests
+uv run ty check
 
 # Auto-fix lint findings and reformat
-ruff check --fix src tests
-ruff format src tests
+uv run ruff check --fix src tests
+uv run ruff format src tests
 
 # Run the tests
-pytest
+uv run pytest
 
 # Coverage report
-pytest --cov=sync --cov-report=term-missing
+uv run pytest --cov=sync --cov-report=term-missing
 
 # Run the tool against a real album (dev, no Docker)
 SHARED_ALBUM_URL='https://www.icloud.com/sharedalbum/#B2AJ...' \
   OUTPUT_DIR="$PWD/photos" \
-  python3 src/sync.py
+  uv run src/sync.py
+
+# Update a locked dep (e.g. bump pytest)
+uv lock --upgrade-package pytest
+
+# Add a new dev dep
+uv add --dev <package>
 
 # Build the Docker image (host arch)
 docker build -t icloud-shared-album-sync:local .

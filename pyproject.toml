@@ -1,3 +1,31 @@
+[project]
+name = "icloud-shared-album-sync"
+version = "0.0.0"
+description = "The shared album, backed up somewhere you actually control."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [
+    { name = "Bitwise Forge", email = "contact@bitwiseforge.com" },
+]
+# Runtime deps intentionally empty — src/sync.py is stdlib-only by design.
+# See AGENTS.md and CONTRIBUTING.md for the "no runtime deps" hard rule.
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "ruff>=0.15",
+    "ty>=0.0.61",
+    "pre-commit>=4",
+]
+
+[tool.uv]
+# This project ships as a Docker image, not a pip package. uv should manage
+# the environment but skip trying to install this tree as a package.
+package = false
+
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]

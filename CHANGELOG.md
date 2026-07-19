@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Quality gate enforced via pre-commit: [Ruff](https://docs.astral.sh/ruff/)
   for lint + format, [ty](https://docs.astral.sh/ty/) for type checking.
   Same tools run in CI so `--no-verify` bypasses don't save you.
+- [uv](https://docs.astral.sh/uv/) as the environment and dependency manager.
+  `uv sync` provisions a locked venv from `pyproject.toml` + `uv.lock`,
+  `uv run <cmd>` executes tools inside it without needing shell activation.
+  Same install byte-for-byte across contributors and CI.
 - Contribution documentation: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`
   (Contributor Covenant v2.1), `SECURITY.md`, `AGENTS.md` (AI coding-tool
   onboarding), pull-request template, bug and feature-request issue
