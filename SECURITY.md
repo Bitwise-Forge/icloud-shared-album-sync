@@ -6,7 +6,7 @@ If you believe you've found a security issue in this project, please report it p
 
 **Preferred:** use [GitHub's private vulnerability reporting](https://github.com/Bitwise-Forge/icloud-shared-album-sync/security/advisories/new) — this opens a private advisory that only the Bitwise Forge team can see.
 
-**Fallback:** email `security@bitwiseforge.com` with:
+**Fallback:** email `contact@bitwiseforge.com` with:
 
 - A description of the issue and its impact
 - Steps to reproduce (a minimal recipe is more valuable than a full write-up)
