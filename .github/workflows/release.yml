@@ -71,10 +71,15 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/bitwise-forge/icloud-shared-album-sync
+          # Disable the implicit `latest=auto` behavior — otherwise metadata-
+          # action adds :latest on any git-tag-triggered run, ignoring the
+          # `enable=` we set on the explicit type=raw line below.
+          flavor: |
+            latest=false
           # Minimal tag matrix: exact git tag + latest (stable releases only).
           # type=ref uses the raw tag name (v0.1.0, not just 0.1.0) so image
           # tags mirror git tags exactly. Pre-release tags (v0.0.1-test,
-          # v0.1.0-rc1) publish under their versioned tag but don't move :latest.
+          # v0.1.0-rc1) publish under their versioned tag only.
           tags: |
             type=ref,event=tag
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
