@@ -23,7 +23,7 @@ Out of scope:
 
 - **Authenticated (non-public) Shared Album support.** This tool intentionally does not touch Apple ID credentials.
 - **Full iCloud Photos Library sync.** Use [icloudpd](https://github.com/icloud-photos-downloader/icloud_photos_downloader) if that's what you need.
-- **Casual third-party runtime dependencies.** Every runtime dep has to earn its keep — removing meaningful boilerplate or delivering capability the stdlib can't cleanly match. Current runtime deps: `httpx`. See AGENTS.md hard rule #1 for the bar new additions must clear. The image is ~145 MB and the supply-chain surface is deliberately small.
+- **Casual third-party runtime dependencies.** Every runtime dep has to earn its keep — removing meaningful boilerplate or delivering capability the stdlib can't cleanly match. Current runtime deps: `httpx`. See AGENTS.md hard rule #1 for the bar new additions must clear. The image is ~53 MB and the supply-chain surface is deliberately small.
 
 ## Development setup
 
@@ -49,7 +49,7 @@ uv run pytest
 With coverage:
 
 ```bash
-uv run pytest --cov=sync --cov-report=term-missing
+uv run pytest --cov=icloud_sync --cov-report=term-missing
 ```
 
 Coverage is expected to stay at **100%**. Every new function or branch needs a test.
@@ -84,7 +84,7 @@ uv run ruff format src tests
 ## Style expectations
 
 - **Runtime deps stay minimal.** Currently just `httpx`. Adding another is a design change — open an issue first to discuss the boilerplate it removes or the capability it delivers. Dev-time deps (in `[dependency-groups.dev]` in `pyproject.toml`) don't count against this.
-- Keep functions small and readable. This is one Python file for a reason — introducing packages or plugin systems is over-engineering here.
+- Keep functions small and readable. The source is organized as an `icloud_sync/` package with modules split by responsibility (`apple_api`, `manifest`, `storage`, `orchestrator`, `cli`) — respect those boundaries. Anything that talks HTTP goes in `apple_api`; filesystem work goes in `storage`; pure data reasoning goes in `manifest`.
 - Comments explain *why*, not *what*. If a comment restates what the code does, delete it.
 - Log at `INFO` for state changes and per-asset actions; `DEBUG` for skip decisions and other high-frequency signals.
 
@@ -93,7 +93,7 @@ uv run ruff format src tests
 - **Do one thing.** A refactor + a bug fix in the same PR is harder to review than two small PRs.
 - **Add or update tests** for every behavior change. Coverage stays at 100%.
 - **Update the README** for user-visible changes (new env vars, new behavior, changed defaults).
-- **Verify against a real album** if you touched anything in `sync_album`, `resolve_shard`, `fetch_stream`, `fetch_asset_urls`, or `download`. Tests mock the network — integration confidence requires a live run.
+- **Verify against a real album** if you touched anything in `orchestrator.sync_album` or `apple_api` (`resolve_shard`, `fetch_stream`, `fetch_asset_urls`, `download`). Tests mock the network — integration confidence requires a live run.
 - **Verify the Docker build** if you changed the `Dockerfile`. Ideally for both `linux/amd64` and `linux/arm64` via `docker buildx`.
 - **Small commits, meaningful messages.** No pressure to squash if the history reads clean.
 

@@ -11,9 +11,22 @@ The API this tool talks to (`sharedstreams.icloud.com`) is undocumented and unof
 ## Repository layout
 
 ```
-├── src/sync.py                # Single-file runtime. STDLIB ONLY.
-├── tests/test_sync.py         # Pytest suite. 100% line + branch coverage.
-├── Dockerfile                 # python:3.13-slim + non-root app user (uid 1000).
+├── src/icloud_sync/           # Package. Modules split by responsibility.
+│   ├── __init__.py            # Public API surface (main, sync_album).
+│   ├── __main__.py            # `python -m icloud_sync` entry point.
+│   ├── apple_api.py           # HTTP transport + Apple's 330-redirect protocol.
+│   ├── manifest.py            # Token / derivative / sort-key logic. Pure.
+│   ├── storage.py             # Filenames, pruning, disk-budget math.
+│   ├── orchestrator.py        # sync_album — glues the three above together.
+│   └── cli.py                 # Env parsing, signal handling, main loop.
+├── tests/                     # Pytest suite. 100% line + branch coverage.
+│   ├── conftest.py            # Shared fixtures + builders.
+│   ├── test_apple_api.py
+│   ├── test_manifest.py
+│   ├── test_storage.py
+│   ├── test_orchestrator.py
+│   └── test_cli.py
+├── Dockerfile                 # python:3.14-alpine + non-root app user (uid 1000).
 ├── .dockerignore
 ├── pyproject.toml             # Project metadata, dep groups, and tool config
 │                              # (pytest, coverage, ruff, ty, uv).
@@ -35,10 +48,10 @@ The API this tool talks to (`sharedstreams.icloud.com`) is undocumented and unof
 ## Hard rules — do not break these
 
 1. **Runtime deps earn their keep.** Prefer stdlib when it's clean. Add a runtime dep only when it removes meaningful boilerplate, delivers capability the stdlib can't easily match, and comes from a well-maintained, minimal-transitive-surface package. Each addition is a design change — discuss it before implementing. Current runtime deps: `httpx`.
-2. **Test coverage stays at 100%** — line and branch, measured by `uv run pytest --cov=sync --cov-report=term-missing`. Every new function, branch, or behavior gets a test.
+2. **Test coverage stays at 100%** — line and branch, measured by `uv run pytest --cov=icloud_sync --cov-report=term-missing`. Every new function, branch, or behavior gets a test.
 3. **`ruff check`, `ruff format`, and `ty check` all pass.** These are enforced by pre-commit hooks locally and by CI. Do not bypass with `git commit --no-verify` — the same checks gate merges. Formatter output is authoritative; do not hand-format against it.
 4. **Do not commit `photos/`, credentials, or real album URLs** beyond the shared test URL already used in the repo. `.gitignore` covers `photos/` — do not weaken it.
-5. **Do not change Apple API request shapes on the strength of tests alone.** The suite mocks `sync._post_json` and `sync.download`. A change that passes tests but has never touched the real API will ship a regression.
+5. **Do not change Apple API request shapes on the strength of tests alone.** The suite mocks `apple_api._post_json` and `apple_api.download`. A change that passes tests but has never touched the real API will ship a regression.
 6. **The managed-file naming pattern is load-bearing.** `local_filename()` writes files as `<base>__<8hex>[.ext]`. `_MANAGED_NAME_RE` matches those, and *only* those, for pruning. If either side moves, both must move together, and the round-trip test must still pass.
 
 ## Ask before doing
@@ -46,7 +59,7 @@ The API this tool talks to (`sharedstreams.icloud.com`) is undocumented and unof
 - Adding a new runtime dep (see hard rule #1 for the bar it must clear)
 - Removing an existing runtime dep in a way that reintroduces boilerplate
 - Changing the shape of Apple API requests or response parsing
-- Introducing a package structure (`src/icloud_shared_album_sync/...`)
+- Adding a new top-level module inside `src/icloud_sync/`. The five current modules cover HTTP, manifest reasoning, filesystem, orchestration, and process concerns — a sixth is a design change.
 - Changing lint / format / type-check rules (`[tool.ruff]` or `[tool.ty]` in `pyproject.toml`)
 - Changing the license, the scope statement, or the copyright holder
 - Breaking backward compatibility of env vars or the `_MANAGED_NAME_RE` pattern
@@ -89,12 +102,12 @@ uv run ruff format src tests
 uv run pytest
 
 # Coverage report
-uv run pytest --cov=sync --cov-report=term-missing
+uv run pytest --cov=icloud_sync --cov-report=term-missing
 
 # Run the tool against a real album (dev, no Docker)
 SHARED_ALBUM_URL='https://www.icloud.com/sharedalbum/#B2AJ...' \
   OUTPUT_DIR="$PWD/photos" \
-  uv run src/sync.py
+  PYTHONPATH=src uv run python -m icloud_sync
 
 # Update a locked dep (e.g. bump pytest)
 uv lock --upgrade-package pytest
@@ -123,10 +136,11 @@ docker buildx rm isas-multi
 
 | Var | Default | Purpose |
 | --- | --- | --- |
-| `SHARED_ALBUM_URL` | *(required)* | Full public Shared Album URL, including `#B...` fragment. |
+| `SHARED_ALBUM_URL` | *(required)* | Full public Shared Album URL. Accepts both `https://www.icloud.com/sharedalbum/#TOKEN` and `https://share.icloud.com/photos/TOKEN`. |
 | `OUTPUT_DIR` | `/photos` | Where to write assets. |
 | `SYNC_INTERVAL_HOURS` | `0` | `0` = single-shot. `> 0` = daemon loop with sleep between syncs. |
-| `PRUNE_REMOVED` | `true` | Delete files removed from the album. Pattern-scoped for safety. |
+| `STORAGE_BUFFER_PERCENT` | `10` | Percentage of the output volume's total capacity to keep untouched. Float, 2-decimal precision, range `[0, 100)`. |
+| `AUTOPRUNE_ON_LOW_STORAGE` | `false` | If `true` and the album exceeds the budget, keep the newest slice that fits and prune older photos locally. If `false`, log an error and skip the run without touching disk. |
 | `LOG_LEVEL` | `INFO` | `DEBUG` shows skip decisions. |
 
 ## Coding conventions
@@ -140,27 +154,26 @@ docker buildx rm isas-multi
   - `INFO` for state changes: album metadata, per-asset pull, per-asset prune, sleep, wake, signal received, exit.
   - `DEBUG` for high-frequency signals: per-asset skip decisions, request/response internals.
   - `ERROR` for anticipated failures caught via `try/except` (missing env vars, sync loop failures).
-- **Functions stay small.** No package restructure. The tool is deliberately one file.
+- **Functions stay small.** The package boundaries under `src/icloud_sync/` are load-bearing — put HTTP work in `apple_api`, filesystem work in `storage`, pure data reasoning in `manifest`. Do not blur the lines.
 - **No fallbacks or defensive validation for scenarios that can't happen.** Trust internal callers. Only validate at boundaries: env-var reading, Apple response parsing.
 
 ## Testing conventions
 
-- Suite is a single file, `tests/test_sync.py`. Organize sections mirroring `src/sync.py` layout.
+- Suite is split per-module — `test_apple_api.py`, `test_manifest.py`, `test_storage.py`, `test_orchestrator.py`, `test_cli.py`. A test belongs in the file that matches the module it exercises.
+- Shared fixtures (`album`, `main_env`) and shared builders (`_stream_fixture`, `_asset_urls_fixture`, `_MockPostJson`, `_large_album_stream`, `_large_asset_urls`) live in `tests/conftest.py`. Import plain builders with `from conftest import ...`; fixtures are auto-injected by name.
 - Use `@pytest.mark.parametrize` for table-driven tests. Prefer one parametrized test with N cases over N near-identical test methods.
 - Use `monkeypatch` for stubbing — not `unittest.mock.patch` context managers.
 - Use `tmp_path` for filesystem work — not `tempfile.TemporaryDirectory` in setup/teardown.
-- Never touch Apple's real API from the suite. Every network call is stubbed at `sync._post_json` or `sync.download`.
+- Never touch Apple's real API from the suite. Every network call is stubbed at `apple_api._post_json` or `apple_api.download`.
 - Never write outside `tmp_path`. Every filesystem test uses the pytest fixture.
-- Fixtures live in the test file itself, not `conftest.py`. Small enough project that centralization is over-engineering.
-- The coverage config in `pyproject.toml` excludes `if __name__ == "__main__":` — do not add other exclusions without discussion.
+- The coverage config in `pyproject.toml` excludes `if __name__ == "__main__":` lines and the `__main__.py` trampoline — do not add other exclusions without discussion.
 
 ## Docker specifics
 
-- **Two-stage build.** Builder stage installs runtime deps into a venv via uv (using `pyproject.toml` + `uv.lock`); runtime stage copies just the venv and the source. Keeps uv itself out of the shipped image.
-- Base image (both stages): `python:3.13-slim`. Pinned major.minor.
-- Runtime user: `app`, UID 1000, `nologin` shell. Named `app` because Debian ships a stock `sync` user (would collide with `useradd`).
-- ENTRYPOINT is JSON array (exec form) so `SIGTERM` reaches Python's signal handler cleanly.
-- Image size target: keep under 150 MB. Currently ~145 MB.
+- **Two-stage build.** Builder stage (`ghcr.io/astral-sh/uv:python3.14-alpine`) installs runtime deps into a venv via uv (using `pyproject.toml` + `uv.lock`); runtime stage (`python:3.14-alpine`) copies just the venv and the `icloud_sync` package. Keeps uv itself out of the shipped image.
+- Runtime user: `app`, UID 1000, `nologin` shell. Named `app` because both Debian and BusyBox/Alpine ship a stock `sync` user that `adduser` would collide with.
+- ENTRYPOINT is JSON array (exec form) invoking `python3 -m icloud_sync`, so `SIGTERM` reaches Python's signal handler cleanly.
+- Image size target: keep under 60 MB. Currently ~53 MB.
 - `PYTHONUNBUFFERED=1` in ENV — logs stream live to `docker logs`, no `-u` flag needed.
 - `PATH="/app/.venv/bin:$PATH"` in ENV so `python3` resolves to the venv's interpreter.
 - Multi-arch builds require the `docker-container` driver; the default `docker` driver is single-arch only.

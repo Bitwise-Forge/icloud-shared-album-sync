@@ -50,10 +50,11 @@ services:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `SHARED_ALBUM_URL` | *(required)* | The full public Shared Album URL, including the `#B...` fragment. Get it from Photos.app → Share → Public Website. |
+| `SHARED_ALBUM_URL` | *(required)* | The full public Shared Album URL, in either shape Apple hands out: `https://www.icloud.com/sharedalbum/#TOKEN` (classic) or `https://share.icloud.com/photos/TOKEN` (short link). Get it from Photos.app → Share → Public Website. |
 | `OUTPUT_DIR` | `/photos` | Where inside the container to write assets. Mount a host folder here. |
 | `SYNC_INTERVAL_HOURS` | `0` | If `> 0`, run continuously and sleep this many hours between syncs. If `0` (the default), sync once and exit. |
-| `PRUNE_REMOVED` | `true` | If `true`, files this tool downloaded that are no longer in the album get deleted locally on the next sync. Set to `false` to keep local copies of removed assets. Only files that match the tool's naming pattern (see below) are ever pruned — files you dropped in the folder by hand are safe. |
+| `STORAGE_BUFFER_PERCENT` | `10` | Reserves this percentage of the output volume's total capacity as untouchable headroom for the OS, logs, and anything else sharing the disk. Accepts a float (e.g. `7.25`), rounded to two decimal places. Range `[0, 100)`. |
+| `AUTOPRUNE_ON_LOW_STORAGE` | `false` | If `false` and the album would exceed the available budget, the sync logs an error and skips the run — nothing on disk is touched. If `true`, the sync keeps the newest slice of the album that fits under the budget and prunes older photos locally to make room. Newest is defined by upload time (`batchDateCreated`), then capture time (`dateCreated`), then `photoGuid` as a deterministic tiebreaker. |
 | `LOG_LEVEL` | `INFO` | Python logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR`. |
 
 ## How it works
@@ -65,7 +66,7 @@ Apple's Shared Streams API is a short conversation:
 3. Fetch signed CDN URLs (~3 hour expiry) for the assets we want.
 4. Download the best available derivative per asset. Photos use the largest numeric derivative (typically `2048`, the long-edge in pixels). Videos use `720p` when present, `360p` otherwise.
 
-Files land under the filename Apple assigns, with a short hash of the asset's unique ID appended before the extension: `IMG_5744.JPG` → `IMG_5744__a1b2c3d4.JPG`. That hash is deterministic per asset, which does two things: it prevents collisions when two contributors happen to upload files with the same name, and it marks the file as "managed by this tool" so `PRUNE_REMOVED` can safely clean up without touching anything else in the folder.
+Files land under the filename Apple assigns, with a short hash of the asset's unique ID appended before the extension: `IMG_5744.JPG` → `IMG_5744__a1b2c3d4.JPG`. That hash is deterministic per asset, which does two things: it prevents collisions when two contributors happen to upload files with the same name, and it marks the file as "managed by this tool" so pruning can safely clean up without touching anything else in the folder.
 
 EXIF, GPS, and iPhone-model metadata come through untouched inside Apple's shared-album compression. Re-runs are idempotent — assets whose local size matches the manifest are skipped, so a scheduled sync stays fast in steady state.
 
@@ -82,13 +83,13 @@ Python 3.10 or newer, no runtime packages to install:
 ```bash
 export SHARED_ALBUM_URL='https://www.icloud.com/sharedalbum/#B2AJ...'
 export OUTPUT_DIR="$PWD/photos"
-python3 src/sync.py
+PYTHONPATH=src python3 -m icloud_sync
 ```
 
 Or via the project's uv-managed environment:
 
 ```bash
-uv run src/sync.py
+PYTHONPATH=src uv run python -m icloud_sync
 ```
 
 ## Building the image
@@ -103,7 +104,7 @@ docker build -t icloud-shared-album-sync:local .
 
 Then substitute `icloud-shared-album-sync:local` wherever the Quickstart and Compose examples show `ghcr.io/bitwise-forge/icloud-shared-album-sync:latest`.
 
-The resulting image is `~146 MB`, based on `python:3.14-slim`, and runs as a non-root `app` user (UID 1000) inside the container. Multi-architecture builds (`linux/amd64` + `linux/arm64`) work via `docker buildx` and a `docker-container` driver — that's how the published GHCR image is produced.
+The resulting image is `~53 MB`, based on `python:3.14-alpine`, and runs as a non-root `app` user (UID 1000) inside the container. Multi-architecture builds (`linux/amd64` + `linux/arm64`) work via `docker buildx` and a `docker-container` driver — that's how the published GHCR image is produced.
 
 ## Testing
 
@@ -118,7 +119,7 @@ uv run pytest                    # run the tests
 With a coverage report:
 
 ```bash
-uv run pytest --cov=sync --cov-report=term-missing
+uv run pytest --cov=icloud_sync --cov-report=term-missing
 ```
 
 The pre-commit hook runs [Ruff](https://docs.astral.sh/ruff/) (lint + format) and [ty](https://docs.astral.sh/ty/) (type check) on every commit. See [CONTRIBUTING.md](./CONTRIBUTING.md#quality-gate) for details.
@@ -129,7 +130,7 @@ Coverage groups:
 
 - **Pure logic:** URL parsing, best-derivative selection (photo, video, edge cases), collision-proof local filename generation, the managed-file naming regex.
 - **Shard resolution:** happy-path 200, 330 redirect via response header, missing-host error path.
-- **End-to-end `sync_album`:** creates the output directory; downloads every asset at the manifest's declared size; skips unchanged files on re-run; re-downloads on size mismatch; prunes orphans that match the tool's naming pattern; leaves manual (non-matching) files alone; honours `PRUNE_REMOVED=false`; handles filename collisions across contributors; prunes assets removed from the album on the next sync; handles an empty manifest.
+- **End-to-end `sync_album`:** creates the output directory; downloads every asset at the manifest's declared size; skips unchanged files on re-run; re-downloads on size mismatch; prunes orphans that match the tool's naming pattern; leaves manual (non-matching) files alone; handles filename collisions across contributors; prunes assets removed from the album on the next sync; handles an empty manifest; when `AUTOPRUNE_ON_LOW_STORAGE=true`, keeps the newest slice that fits under the disk budget and evicts older photos; when `false`, refuses to touch disk on over-budget runs.
 
 ## What it doesn't do (yet)
 

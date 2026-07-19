@@ -1,6 +1,6 @@
 version: 2
 updates:
-  # Dev dependencies (pytest, pytest-cov). Runtime code is stdlib-only.
+  # Python deps — runtime (httpx) and dev group (pytest, ruff, ty, pre-commit).
   - package-ecosystem: pip
     directory: "/"
     schedule:
@@ -14,7 +14,8 @@ updates:
       prefix: "dev-deps"
       include: scope
 
-  # Docker base image (python:3.13-slim). Pinned in the Dockerfile FROM line.
+  # Docker base image (python:3.14-alpine) and the uv builder image, both
+  # pinned in the Dockerfile FROM lines.
   - package-ecosystem: docker
     directory: "/"
     schedule:
@@ -28,7 +29,7 @@ updates:
       prefix: "docker"
       include: scope
 
-  # Actions used in .github/workflows once we add CI.
+  # Actions pinned in .github/workflows/*.yml (ci.yml, release.yml).
   - package-ecosystem: github-actions
     directory: "/"
     schedule:

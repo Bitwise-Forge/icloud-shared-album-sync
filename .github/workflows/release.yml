@@ -37,7 +37,7 @@ jobs:
         run: uv run ty check
 
       - name: pytest with 100% coverage gate
-        run: uv run pytest --cov=sync --cov-report=term-missing --cov-fail-under=100
+        run: uv run pytest --cov=icloud_sync --cov-report=term-missing --cov-fail-under=100
 
   docker-publish:
     name: Build and push multi-arch image to GHCR

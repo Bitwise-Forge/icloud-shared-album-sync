@@ -33,8 +33,12 @@ pythonpath = ["src"]
 addopts = "-ra --strict-markers"
 
 [tool.coverage.run]
-source = ["src"]
+source = ["icloud_sync"]
 branch = true
+# The __main__ trampoline runs at module load — nothing meaningful to
+# assert about it beyond "it calls main()". Excluded so the 100% gate
+# stays honest.
+omit = ["*/icloud_sync/__main__.py"]
 
 [tool.coverage.report]
 show_missing = true

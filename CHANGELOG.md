@@ -7,7 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-07-19
+## [0.2.0] - 2026-07-19
+
+Storage-aware sync for constrained hosts, broader URL support, and a
+much smaller container image.
+
+### Added
+
+- `STORAGE_BUFFER_PERCENT` (default `10`): reserves a percentage of the
+  output volume's total capacity as untouchable headroom for the OS,
+  logs, and anything else sharing the disk. Accepts a float, rounded to
+  two decimal places, validated to `[0, 100)`.
+- `AUTOPRUNE_ON_LOW_STORAGE` (default `false`): opt-in cache-eviction
+  mode for constrained hosts (Raspberry Pi + SD card, etc.). When the
+  album would exceed the available budget, keeps the newest slice that
+  fits and prunes older photos locally to make room. Newest is defined
+  by `batchDateCreated` (upload time), then `dateCreated` (capture time)
+  as a tiebreaker within a batch, then `photoGuid` for full determinism.
+- Preflight disk-budget check runs before any downloads. When the album
+  would exceed the budget and `AUTOPRUNE_ON_LOW_STORAGE=false`, the sync
+  logs a specific error and skips the run without touching disk.
+- Support for Apple's short-link URL shape,
+  `https://share.icloud.com/photos/TOKEN`, in addition to the classic
+  `https://www.icloud.com/sharedalbum/#TOKEN` form.
+
+### Changed
+
+- Base image switched from `python:3.14-slim` to `python:3.14-alpine`.
+  Image size dropped from ~146 MB to ~53 MB (-64%) with no functional
+  changes.
+- Token validation now accepts any base62 first character. The prior
+  check hard-coded a `B` prefix based on a single example URL — real
+  Apple tokens can start with any base62 character.
+- Source is organized as a Python package (`icloud_sync/`) with modules
+  split by responsibility: `apple_api` (HTTP transport), `manifest`
+  (token / derivative / sort-key logic), `storage` (filenames, pruning,
+  disk-budget math), `orchestrator` (`sync_album`), and `cli` (env
+  parsing, signal handling, main loop). Test suite split along the same
+  boundaries. Container entry point is now `python3 -m icloud_sync`;
+  running from source uses `PYTHONPATH=src python3 -m icloud_sync`.
+
+### Removed
+
+- `PRUNE_REMOVED` env var. Pruning is now unconditional — the iCloud
+  album is the source of truth and the local folder mirrors it, so
+  keeping orphaned assets around served no real use case.
+
+## [0.1.0] - 2026-07-18
 
 Initial public release.
 
@@ -54,5 +100,6 @@ Initial public release.
 - Only public Shared Albums are supported. Private (auth-required) albums are
   out of scope by design.
 
-[Unreleased]: https://github.com/Bitwise-Forge/icloud-shared-album-sync/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Bitwise-Forge/icloud-shared-album-sync/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Bitwise-Forge/icloud-shared-album-sync/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Bitwise-Forge/icloud-shared-album-sync/releases/tag/v0.1.0

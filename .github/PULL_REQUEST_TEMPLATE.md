@@ -14,14 +14,14 @@ review.
 ## Testing
 
 - [ ] `pytest` passes locally
-- [ ] Coverage remains at 100% (`pytest --cov=sync --cov-report=term-missing`)
-- [ ] Runtime behavior verified against a real public Shared Album (if you changed `sync_album`, `resolve_shard`, `fetch_stream`, `fetch_asset_urls`, or `download`)
+- [ ] Coverage remains at 100% (`pytest --cov=icloud_sync --cov-report=term-missing`)
+- [ ] Runtime behavior verified against a real public Shared Album (if you changed anything in `apple_api`, `orchestrator`, or the Apple-facing part of `manifest`)
 - [ ] `docker build .` succeeds and the resulting image runs (if you changed the `Dockerfile`)
 
 ## Checklist
 
 - [ ] This PR does one thing
-- [ ] No new runtime dependencies (`src/sync.py` is stdlib-only by design)
+- [ ] No new runtime dependencies (the sole runtime dep is `httpx` — see AGENTS.md hard rule #1)
 - [ ] Tests added or updated for the change
 - [ ] README updated if user-visible behavior changed
 
