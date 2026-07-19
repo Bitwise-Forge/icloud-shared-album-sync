@@ -3,20 +3,19 @@
 icloud-shared-album-sync
 
 Pull photos and videos from a public iCloud Shared Album URL to a folder.
-Python stdlib only. Idempotent by filename + declared file size.
+Idempotent by filename + declared file size.
 """
 
 import hashlib
-import json
 import logging
 import os
 import re
 import signal
 import sys
 import threading
-import urllib.error
-import urllib.request
 from urllib.parse import urlparse
+
+import httpx
 
 APPLE_SHARDS_HOST_TEMPLATE = "https://p{shard}-sharedstreams.icloud.com"
 INITIAL_SHARD_PROBE = "23"
@@ -26,6 +25,17 @@ INITIAL_SHARD_PROBE = "23"
 # Extension optional: local_filename() drops the extension when the source
 # filename has none, and the regex has to still match what we produced.
 _MANAGED_NAME_RE = re.compile(r"__[0-9a-f]{8}(?:\.[^./]+)?$")
+
+# Timeouts prevent indefinite hangs if Apple's endpoint stops responding
+# mid-request. Downloads get a longer read window because large videos
+# genuinely take time to stream.
+#
+# No transport-level retries: httpx's top-level convenience functions
+# don't accept `transport=`, and the daemon loop's SYNC_INTERVAL_HOURS
+# already retries the whole sync on transient failures. If we ever want
+# smarter retries (backoff, per-URL policies), reach for tenacity.
+_POST_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
+_DOWNLOAD_TIMEOUT = httpx.Timeout(60.0, connect=10.0, read=120.0)
 
 log = logging.getLogger("sync")
 
@@ -38,6 +48,11 @@ def _configure_logging(level_name: str) -> None:
         datefmt="%Y-%m-%dT%H:%M:%S",
         force=True,
     )
+    # Silence httpx's per-request INFO chatter. Two reasons: it's noisy,
+    # and it logs signed CDN URLs that stay valid for ~3 hours — bad thing
+    # to leak into shared logs. Users who want the detail can override.
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 def extract_token(url: str) -> str:
@@ -47,23 +62,20 @@ def extract_token(url: str) -> str:
     return fragment
 
 
-def _post_json(url: str, payload: dict):
-    body = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
+def _post_json(url: str, payload: dict) -> httpx.Response:
+    # Apple's endpoint expects Content-Type: text/plain even though the body
+    # is JSON, and Origin: https://www.icloud.com to mimic the web viewer.
+    # httpx doesn't follow 3xx on POST by default, so Apple's 330 shard-
+    # redirect comes back as a normal Response we can inspect.
+    return httpx.post(
         url,
-        data=body,
-        method="POST",
+        json=payload,
         headers={
             "Content-Type": "text/plain",
             "Origin": "https://www.icloud.com",
         },
+        timeout=_POST_TIMEOUT,
     )
-    try:
-        with urllib.request.urlopen(req) as r:
-            return r.status, dict(r.headers), json.loads(r.read())
-    except urllib.error.HTTPError as e:
-        # Apple returns 330 on shard-mismatch with the correct host in the body.
-        return e.code, dict(e.headers), json.loads(e.read())
 
 
 def resolve_shard(token: str) -> str:
@@ -71,31 +83,32 @@ def resolve_shard(token: str) -> str:
         APPLE_SHARDS_HOST_TEMPLATE.format(shard=INITIAL_SHARD_PROBE)
         + f"/{token}/sharedstreams/webstream"
     )
-    status, headers, body = _post_json(probe_url, {"streamCtag": None})
-    if status == 200:
+    r = _post_json(probe_url, {"streamCtag": None})
+    if r.status_code == 200:
         return INITIAL_SHARD_PROBE
-    host = headers.get("X-Apple-MMe-Host") or body.get("X-Apple-MMe-Host")
+    host = r.headers.get("X-Apple-MMe-Host") or r.json().get("X-Apple-MMe-Host")
     if not host:
         raise RuntimeError(
-            f"Unexpected shard-resolve response: status={status} headers={headers} body={body}"
+            f"Unexpected shard-resolve response: status={r.status_code} "
+            f"headers={dict(r.headers)} body={r.text}"
         )
     return host.split("-")[0][1:]
 
 
 def fetch_stream(shard: str, token: str) -> dict:
     url = APPLE_SHARDS_HOST_TEMPLATE.format(shard=shard) + f"/{token}/sharedstreams/webstream"
-    status, _, body = _post_json(url, {"streamCtag": None})
-    if status != 200:
-        raise RuntimeError(f"webstream failed: status={status} body={body}")
-    return body
+    r = _post_json(url, {"streamCtag": None})
+    if r.status_code != 200:
+        raise RuntimeError(f"webstream failed: status={r.status_code} body={r.text}")
+    return r.json()
 
 
 def fetch_asset_urls(shard: str, token: str, photo_guids: list) -> dict:
     url = APPLE_SHARDS_HOST_TEMPLATE.format(shard=shard) + f"/{token}/sharedstreams/webasseturls"
-    status, _, body = _post_json(url, {"photoGuids": photo_guids})
-    if status != 200:
-        raise RuntimeError(f"webasseturls failed: status={status} body={body}")
-    return body
+    r = _post_json(url, {"photoGuids": photo_guids})
+    if r.status_code != 200:
+        raise RuntimeError(f"webasseturls failed: status={r.status_code} body={r.text}")
+    return r.json()
 
 
 def best_derivative_key(derivatives: dict) -> str:
@@ -143,10 +156,23 @@ def _prune_removed(output_dir: str, expected_names: set) -> int:
 
 
 def download(url: str, dest_path: str) -> int:
-    with urllib.request.urlopen(url) as r, open(dest_path, "wb") as f:
-        data = r.read()
-        f.write(data)
-    return len(data)
+    # Stream to disk so memory doesn't scale with asset size. follow_redirects
+    # is on because Apple's CDN can return redirects on signed URLs.
+    total = 0
+    with (
+        httpx.stream(
+            "GET",
+            url,
+            follow_redirects=True,
+            timeout=_DOWNLOAD_TIMEOUT,
+        ) as r,
+        open(dest_path, "wb") as f,
+    ):
+        r.raise_for_status()
+        for chunk in r.iter_bytes(chunk_size=64 * 1024):
+            f.write(chunk)
+            total += len(chunk)
+    return total
 
 
 def sync_album(url: str, output_dir: str, prune: bool = True) -> None:

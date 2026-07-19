@@ -12,15 +12,13 @@ Two layers:
 Run from the repo root: `pytest`
 """
 
-import io
 import logging
 import os
 import re
 import threading
 import time
-import urllib.error
-from email.message import Message
 
+import httpx
 import pytest
 
 import sync
@@ -80,7 +78,9 @@ class _MockPostJson:
     """Route-aware fake for sync._post_json.
 
     Distinguishes shard-probe / webstream / webasseturls by URL substring
-    and can simulate a 330 shard-redirect via constructor args.
+    and can simulate a 330 shard-redirect via constructor args. Returns
+    httpx.Response instances so the code under test sees the same shape
+    as a live httpx call.
     """
 
     def __init__(self, stream, asset_urls, shard_probe_status=200, shard_host=None):
@@ -93,13 +93,13 @@ class _MockPostJson:
     def __call__(self, url, payload):
         self.calls.append((url, payload))
         if "webasseturls" in url:
-            return 200, {}, self.asset_urls
+            return httpx.Response(200, json=self.asset_urls)
         if self.shard_probe_status != 200 and f"/p{sync.INITIAL_SHARD_PROBE}-" in url:
             headers = {}
             if self.shard_host:
                 headers["X-Apple-MMe-Host"] = self.shard_host
-            return self.shard_probe_status, headers, {}
-        return 200, {}, self.stream
+            return httpx.Response(self.shard_probe_status, headers=headers, json={})
+        return httpx.Response(200, json=self.stream)
 
 
 # ---------- extract_token --------------------------------------------------
@@ -463,84 +463,59 @@ def test_configure_logging_defaults_to_info_on_unknown(restore_root_logger):
 # ---------- _post_json -----------------------------------------------------
 
 
-class _FakeResponse:
-    """Context-manager wrapper matching what urlopen returns on success."""
-
-    def __init__(self, status, headers, body_bytes):
-        self.status = status
-        self.headers = headers
-        self._body = body_bytes
-
-    def read(self):
-        return self._body
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        return None
-
-
-def test_post_json_returns_status_headers_and_parsed_body(monkeypatch):
-    body = b'{"result": "ok"}'
+def test_post_json_sends_expected_request_and_returns_response(monkeypatch):
     captured = {}
 
-    def fake_urlopen(req):
-        captured["url"] = req.full_url
-        captured["method"] = req.get_method()
-        captured["origin"] = req.headers.get("Origin")
-        captured["content_type"] = req.headers.get("Content-type")
-        captured["body"] = req.data
-        return _FakeResponse(status=200, headers={"X-Foo": "bar"}, body_bytes=body)
+    def fake_post(url, **kwargs):
+        captured["url"] = url
+        captured["json"] = kwargs.get("json")
+        captured["headers"] = kwargs.get("headers", {})
+        return httpx.Response(200, headers={"X-Foo": "bar"}, json={"result": "ok"})
 
-    monkeypatch.setattr(sync.urllib.request, "urlopen", fake_urlopen)
-    status, headers, parsed = sync._post_json("https://example.com/foo", {"a": 1})
+    monkeypatch.setattr(sync.httpx, "post", fake_post)
+    r = sync._post_json("https://example.com/foo", {"a": 1})
 
-    assert status == 200
-    assert headers.get("X-Foo") == "bar"
-    assert parsed == {"result": "ok"}
+    assert r.status_code == 200
+    assert r.headers.get("X-Foo") == "bar"
+    assert r.json() == {"result": "ok"}
     # Verify the request was shaped the way Apple expects.
     assert captured["url"] == "https://example.com/foo"
-    assert captured["method"] == "POST"
-    assert captured["origin"] == "https://www.icloud.com"
-    assert captured["body"] == b'{"a": 1}'
+    assert captured["json"] == {"a": 1}
+    assert captured["headers"]["Content-Type"] == "text/plain"
+    assert captured["headers"]["Origin"] == "https://www.icloud.com"
 
 
-def test_post_json_reads_body_from_http_error(monkeypatch):
-    """Apple's shard-redirect returns 330 as an HTTPError; the body still
-    carries the correct host, so _post_json must return the error path."""
-    error_body = b'{"X-Apple-MMe-Host": "p42-sharedstreams.icloud.com"}'
-    hdrs = Message()
-    hdrs["X-Apple-MMe-Host"] = "p42-sharedstreams.icloud.com"
+def test_post_json_returns_non_2xx_response_without_raising(monkeypatch):
+    """Apple's shard-redirect returns 330 on POST. httpx doesn't follow
+    redirects on POST by default, so this comes back as a normal Response
+    that _post_json returns as-is — no exception dance required."""
 
-    def fake_urlopen(_req):
-        raise urllib.error.HTTPError(
-            url="https://example.com",
-            code=330,
-            msg="Moved",
-            hdrs=hdrs,
-            fp=io.BytesIO(error_body),
+    def fake_post(_url, **_kwargs):
+        return httpx.Response(
+            330,
+            headers={"X-Apple-MMe-Host": "p42-sharedstreams.icloud.com"},
+            json={"X-Apple-MMe-Host": "p42-sharedstreams.icloud.com"},
         )
 
-    monkeypatch.setattr(sync.urllib.request, "urlopen", fake_urlopen)
-    status, headers, parsed = sync._post_json("https://example.com", {})
+    monkeypatch.setattr(sync.httpx, "post", fake_post)
+    r = sync._post_json("https://example.com", {})
 
-    assert status == 330
-    assert headers.get("X-Apple-MMe-Host") == "p42-sharedstreams.icloud.com"
-    assert parsed["X-Apple-MMe-Host"] == "p42-sharedstreams.icloud.com"
+    assert r.status_code == 330
+    assert r.headers.get("X-Apple-MMe-Host") == "p42-sharedstreams.icloud.com"
+    assert r.json()["X-Apple-MMe-Host"] == "p42-sharedstreams.icloud.com"
 
 
 # ---------- fetch_stream / fetch_asset_urls error paths --------------------
 
 
 def test_fetch_stream_raises_on_non_200(monkeypatch):
-    monkeypatch.setattr(sync, "_post_json", lambda url, payload: (500, {}, {"e": "x"}))
+    monkeypatch.setattr(sync, "_post_json", lambda _u, _p: httpx.Response(500, json={"e": "x"}))
     with pytest.raises(RuntimeError, match="webstream failed"):
         sync.fetch_stream("23", "TOKEN")
 
 
 def test_fetch_asset_urls_raises_on_non_200(monkeypatch):
-    monkeypatch.setattr(sync, "_post_json", lambda url, payload: (500, {}, {"e": "x"}))
+    monkeypatch.setattr(sync, "_post_json", lambda _u, _p: httpx.Response(500, json={"e": "x"}))
     with pytest.raises(RuntimeError, match="webasseturls failed"):
         sync.fetch_asset_urls("23", "TOKEN", ["guid1"])
 
@@ -561,13 +536,45 @@ def test_prune_skips_directories_matching_pattern(tmp_path):
 # ---------- download -------------------------------------------------------
 
 
-def test_download_writes_response_bytes_to_disk(tmp_path, monkeypatch):
-    payload = b"hello world" * 100
+class _FakeStreamResponse:
+    """Stand-in for the response object httpx.stream() yields as a
+    context manager. iter_bytes chunks the payload the way httpx does
+    so download()'s streaming loop is genuinely exercised."""
 
-    def fake_urlopen(_url):
-        return _FakeResponse(status=200, headers={}, body_bytes=payload)
+    def __init__(self, payload, chunk_size=16 * 1024):
+        self._payload = payload
+        self._chunk_size = chunk_size
 
-    monkeypatch.setattr(sync.urllib.request, "urlopen", fake_urlopen)
+    def raise_for_status(self):
+        return None
+
+    def iter_bytes(self, chunk_size=None):
+        step = chunk_size or self._chunk_size
+        for i in range(0, len(self._payload), step):
+            yield self._payload[i : i + step]
+
+
+class _FakeStreamCM:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def __enter__(self):
+        return _FakeStreamResponse(self._payload)
+
+    def __exit__(self, *_args):
+        return None
+
+
+def test_download_streams_response_bytes_to_disk(tmp_path, monkeypatch):
+    # Payload larger than the chunk size — proves we actually iterate.
+    payload = b"hello world" * 10_000
+
+    def fake_stream(method, url, **_kwargs):
+        assert method == "GET"
+        assert url == "https://example.com/x"
+        return _FakeStreamCM(payload)
+
+    monkeypatch.setattr(sync.httpx, "stream", fake_stream)
     dest = str(tmp_path / "out.bin")
     written = sync.download("https://example.com/x", dest)
 

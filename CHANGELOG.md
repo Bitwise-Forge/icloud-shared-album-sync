@@ -9,7 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Python stdlib scraper for public iCloud Shared Albums (`src/sync.py`).
+- Python scraper for public iCloud Shared Albums (`src/sync.py`) using
+  [httpx](https://www.python-httpx.org/) as the sole runtime dependency.
+  Comes with sane timeouts, streaming downloads for large videos, and
+  clean handling of Apple's 330 shard-redirect protocol.
 - Environment-variable configuration: `SHARED_ALBUM_URL`, `OUTPUT_DIR`,
   `SYNC_INTERVAL_HOURS`, `PRUNE_REMOVED`, `LOG_LEVEL`.
 - Idempotent syncs, keyed by filename + declared file size — re-runs skip

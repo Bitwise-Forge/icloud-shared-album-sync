@@ -23,7 +23,7 @@ Out of scope:
 
 - **Authenticated (non-public) Shared Album support.** This tool intentionally does not touch Apple ID credentials.
 - **Full iCloud Photos Library sync.** Use [icloudpd](https://github.com/icloud-photos-downloader/icloud_photos_downloader) if that's what you need.
-- **Third-party runtime dependencies.** `src/sync.py` uses only the Python standard library. That constraint keeps the image small (~145 MB) and the supply chain minimal.
+- **Casual third-party runtime dependencies.** Every runtime dep has to earn its keep — removing meaningful boilerplate or delivering capability the stdlib can't cleanly match. Current runtime deps: `httpx`. See AGENTS.md hard rule #1 for the bar new additions must clear. The image is ~145 MB and the supply-chain surface is deliberately small.
 
 ## Development setup
 
@@ -83,7 +83,7 @@ uv run ruff format src tests
 
 ## Style expectations
 
-- **Runtime code is stdlib-only.** No `requests`, no `aiohttp`, no runtime pip installs. Dev-time deps (in `requirements-dev.txt`) are fine.
+- **Runtime deps stay minimal.** Currently just `httpx`. Adding another is a design change — open an issue first to discuss the boilerplate it removes or the capability it delivers. Dev-time deps (in `[dependency-groups.dev]` in `pyproject.toml`) don't count against this.
 - Keep functions small and readable. This is one Python file for a reason — introducing packages or plugin systems is over-engineering here.
 - Comments explain *why*, not *what*. If a comment restates what the code does, delete it.
 - Log at `INFO` for state changes and per-asset actions; `DEBUG` for skip decisions and other high-frequency signals.

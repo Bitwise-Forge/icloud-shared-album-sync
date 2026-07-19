@@ -8,9 +8,14 @@ requires-python = ">=3.9"
 authors = [
     { name = "Bitwise Forge", email = "contact@bitwiseforge.com" },
 ]
-# Runtime deps intentionally empty — src/sync.py is stdlib-only by design.
-# See AGENTS.md and CONTRIBUTING.md for the "no runtime deps" hard rule.
-dependencies = []
+# Runtime deps stay minimal — each one earns its keep. httpx replaces
+# ~30 lines of urllib.request ceremony and gets us timeouts, transport-
+# level retries, connection pooling, and streaming downloads for free.
+# See AGENTS.md and CONTRIBUTING.md for the "runtime deps earn their keep"
+# guideline before adding another.
+dependencies = [
+    "httpx>=0.27",
+]
 
 [dependency-groups]
 dev = [
@@ -53,7 +58,7 @@ select = [
     "E",    # pycodestyle errors
     "F",    # pyflakes
     "I",    # isort — import ordering
-    "UP",   # pyupgrade — modernise syntax
+    "UP",   # pyupgrade — modernize syntax
     "B",    # flake8-bugbear — common bug patterns
     "SIM",  # flake8-simplify — code simplifications
     "RUF",  # Ruff-native rules

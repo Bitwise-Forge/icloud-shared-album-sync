@@ -4,7 +4,7 @@
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](./CODE_OF_CONDUCT.md)
 
-Keep a folder in sync with a public iCloud Shared Album — photos, videos, and all — using a tiny Docker image with zero third-party dependencies.
+Keep a folder in sync with a public iCloud Shared Album — photos, videos, and all — using a tiny Docker image and a minimal Python + [httpx](https://www.python-httpx.org/) stack.
 
 Point it at a Shared Album URL, mount a folder, and let it run. Anything anyone adds to the album shows up in the folder on the next sync. Delete something from the album and it disappears locally too. Great for digital picture frames, family photo backups, or any workflow that ends with "…and now I want those photos on my server."
 

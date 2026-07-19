@@ -4,7 +4,7 @@ Instructions for AI coding agents working in this repository. This is a quick-re
 
 ## What this project is
 
-A Docker-packaged Python utility that syncs public iCloud Shared Albums to a folder. Runtime is stdlib-only (no `requests`, no `aiohttp`, no third-party pip installs). Multi-arch image (`linux/amd64` + `linux/arm64`) targeting `ghcr.io/bitwise-forge/icloud-shared-album-sync`. Owned by [Bitwise Forge](https://bitwiseforge.com), MIT-licensed.
+A Docker-packaged Python utility that syncs public iCloud Shared Albums to a folder. Runtime deps are deliberately minimal — currently just `httpx` for the HTTP layer. Multi-arch image (`linux/amd64` + `linux/arm64`) targeting `ghcr.io/bitwise-forge/icloud-shared-album-sync`. Owned by [Bitwise Forge](https://bitwiseforge.com), MIT-licensed.
 
 The API this tool talks to (`sharedstreams.icloud.com`) is undocumented and unofficial. Apple can change it on any release without notice. Treat that risk seriously.
 
@@ -34,8 +34,8 @@ The API this tool talks to (`sharedstreams.icloud.com`) is undocumented and unof
 
 ## Hard rules — do not break these
 
-1. **`src/sync.py` uses only the Python standard library.** No runtime pip deps. Ever. If a feature seems to require one, stop and discuss with the maintainer first.
-2. **Test coverage stays at 100%** — line and branch, measured by `pytest --cov=sync --cov-report=term-missing`. Every new function, branch, or behavior gets a test.
+1. **Runtime deps earn their keep.** Prefer stdlib when it's clean. Add a runtime dep only when it removes meaningful boilerplate, delivers capability the stdlib can't easily match, and comes from a well-maintained, minimal-transitive-surface package. Each addition is a design change — discuss it before implementing. Current runtime deps: `httpx`.
+2. **Test coverage stays at 100%** — line and branch, measured by `uv run pytest --cov=sync --cov-report=term-missing`. Every new function, branch, or behavior gets a test.
 3. **`ruff check`, `ruff format`, and `ty check` all pass.** These are enforced by pre-commit hooks locally and by CI. Do not bypass with `git commit --no-verify` — the same checks gate merges. Formatter output is authoritative; do not hand-format against it.
 4. **Do not commit `photos/`, credentials, or real album URLs** beyond the shared test URL already used in the repo. `.gitignore` covers `photos/` — do not weaken it.
 5. **Do not change Apple API request shapes on the strength of tests alone.** The suite mocks `sync._post_json` and `sync.download`. A change that passes tests but has never touched the real API will ship a regression.
@@ -43,7 +43,8 @@ The API this tool talks to (`sharedstreams.icloud.com`) is undocumented and unof
 
 ## Ask before doing
 
-- Adding a third-party runtime dependency
+- Adding a new runtime dep (see hard rule #1 for the bar it must clear)
+- Removing an existing runtime dep in a way that reintroduces boilerplate
 - Changing the shape of Apple API requests or response parsing
 - Introducing a package structure (`src/icloud_shared_album_sync/...`)
 - Changing lint / format / type-check rules (`[tool.ruff]` or `[tool.ty]` in `pyproject.toml`)
@@ -155,11 +156,13 @@ docker buildx rm isas-multi
 
 ## Docker specifics
 
-- Base image: `python:3.13-slim`. Pinned major.minor.
+- **Two-stage build.** Builder stage installs runtime deps into a venv via uv (using `pyproject.toml` + `uv.lock`); runtime stage copies just the venv and the source. Keeps uv itself out of the shipped image.
+- Base image (both stages): `python:3.13-slim`. Pinned major.minor.
 - Runtime user: `app`, UID 1000, `nologin` shell. Named `app` because Debian ships a stock `sync` user (would collide with `useradd`).
 - ENTRYPOINT is JSON array (exec form) so `SIGTERM` reaches Python's signal handler cleanly.
 - Image size target: keep under 150 MB. Currently ~145 MB.
 - `PYTHONUNBUFFERED=1` in ENV — logs stream live to `docker logs`, no `-u` flag needed.
+- `PATH="/app/.venv/bin:$PATH"` in ENV so `python3` resolves to the venv's interpreter.
 - Multi-arch builds require the `docker-container` driver; the default `docker` driver is single-arch only.
 
 ## Scope guardrails

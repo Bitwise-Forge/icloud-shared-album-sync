@@ -26,7 +26,7 @@ repos:
         name: ty type checker
         entry: ty check
         language: python
-        additional_dependencies: ["ty>=0.0.61", "pytest>=8"]
+        additional_dependencies: ["ty>=0.0.61", "pytest>=8", "httpx>=0.27"]
         types: [python]
         pass_filenames: false
         require_serial: true
