@@ -9,4 +9,3 @@ __pycache__
 tests/
 photos/
 # pyproject.toml and uv.lock are needed by the builder stage.
-# requirements-dev.txt is gone — dev deps live in pyproject.toml now.

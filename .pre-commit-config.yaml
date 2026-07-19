@@ -1,11 +1,5 @@
-# Pre-commit hooks — enforce lint, format, and type-check locally.
-# Install once per clone:
-#     source .venv/bin/activate
-#     pre-commit install
-#
-# After install, every `git commit` runs these against staged files and
-# blocks the commit if anything fails. Also runs in CI, so bypassing
-# locally (--no-verify) won't help — the same checks gate merges.
+# Lint, format, type-check. Same tools run in CI, so `git commit --no-verify`
+# doesn't help — the checks gate merges.
 
 repos:
   # Ruff — lint (with auto-fix) and format.
@@ -16,10 +10,9 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  # ty — Astral's type checker. Local hook with pinned dep, so pre-commit
-  # manages its own isolated venv — no reliance on the developer's shell
-  # having .venv activated when git commit fires. Runs against the whole
-  # project (types are inferred cross-file).
+  # ty — Astral's type checker. Local hook with additional_dependencies so
+  # pre-commit manages an isolated venv. pass_filenames: false because ty
+  # infers types cross-file.
   - repo: local
     hooks:
       - id: ty

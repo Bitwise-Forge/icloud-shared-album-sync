@@ -29,11 +29,6 @@ _MANAGED_NAME_RE = re.compile(r"__[0-9a-f]{8}(?:\.[^./]+)?$")
 # Timeouts prevent indefinite hangs if Apple's endpoint stops responding
 # mid-request. Downloads get a longer read window because large videos
 # genuinely take time to stream.
-#
-# No transport-level retries: httpx's top-level convenience functions
-# don't accept `transport=`, and the daemon loop's SYNC_INTERVAL_HOURS
-# already retries the whole sync on transient failures. If we ever want
-# smarter retries (backoff, per-URL policies), reach for tenacity.
 _POST_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 _DOWNLOAD_TIMEOUT = httpx.Timeout(60.0, connect=10.0, read=120.0)
 
