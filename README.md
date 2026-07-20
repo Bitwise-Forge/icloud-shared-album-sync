@@ -10,6 +10,8 @@ Keep a folder in sync with a public iCloud Shared Album — photos, videos, and 
 
 Point it at a Shared Album URL, mount a folder, and let it run. Anything anyone adds to the album shows up in the folder on the next sync. Delete something from the album and it disappears locally too. Great for digital picture frames, family photo backups, or any workflow that ends with "…and now I want those photos on my server."
 
+Building a digital picture frame? Pair with [icloud-album-kiosk](https://github.com/Bitwise-Forge/icloud-album-kiosk) — the display half of the same two-container appliance. This tool writes to the folder; the kiosk renders it as a full-screen crossfading slideshow.
+
 ## Quickstart
 
 ```bash
