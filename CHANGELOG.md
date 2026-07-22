@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-22
+
+Fix: emptied-album sync crashed at the `webasseturls` call instead of
+pruning the local cache.
+
+### Fixed
+
+- Empty-album sync no longer crashes. When a Shared Album's photo list
+  is empty, Apple's `webasseturls` endpoint rejects an empty
+  `photoGuids` list with HTTP 400 "Validation Failed: missing
+  photoGuids". The orchestrator was calling it unconditionally and
+  raising `RuntimeError` before the prune step ran, leaving stale
+  locally-cached files on disk. The orchestrator now short-circuits
+  when the manifest has no photos, skips the `webasseturls` call, and
+  goes straight to prune — the mirror-the-album contract holds and
+  everything previously synced gets evicted.
+- Test suite's `_MockPostJson` now mirrors Apple's real behavior and
+  returns 400 on empty `photoGuids`. Previously the mock returned 200
+  regardless, letting `test_sync_empty_manifest_prunes_all_managed_files`
+  falsely pass against unfixed orchestrator code.
+
 ## [0.2.0] - 2026-07-19
 
 Storage-aware sync for constrained hosts, broader URL support, and a
@@ -100,6 +121,7 @@ Initial public release.
 - Only public Shared Albums are supported. Private (auth-required) albums are
   out of scope by design.
 
-[Unreleased]: https://github.com/Bitwise-Forge/icloud-shared-album-sync/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Bitwise-Forge/icloud-shared-album-sync/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Bitwise-Forge/icloud-shared-album-sync/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Bitwise-Forge/icloud-shared-album-sync/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Bitwise-Forge/icloud-shared-album-sync/releases/tag/v0.1.0

@@ -84,6 +84,11 @@ class _MockPostJson:
     def __call__(self, url, payload):
         self.calls.append((url, payload))
         if "webasseturls" in url:
+            # Mirror Apple's real behavior: empty photoGuids returns 400
+            # "Validation Failed". Orchestrator must short-circuit before
+            # this call when the album has no photos.
+            if not payload.get("photoGuids"):
+                return httpx.Response(400, text="Validation Failed: missing photoGuids")
             return httpx.Response(200, json=self.asset_urls)
         if self.shard_probe_status != 200 and f"/p{apple_api.INITIAL_SHARD_PROBE}-" in url:
             headers = {}

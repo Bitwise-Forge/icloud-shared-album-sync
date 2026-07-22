@@ -113,6 +113,33 @@ def test_sync_empty_manifest_prunes_all_managed_files(album):
     assert len(os.listdir(album.output_dir)) == 0
 
 
+def test_sync_empty_manifest_logs_prune_only_completion(album, caplog):
+    """The empty-album path must complete cleanly and log the standard
+    done= line. Regression guard: prior versions called Apple's
+    webasseturls with an empty photoGuids list, hit 400, and exited via
+    RuntimeError before the prune step ran."""
+    album.run()
+    assert len(os.listdir(album.output_dir)) == 2
+    empty = dict(album.stream)
+    empty["photos"] = []
+    caplog.set_level(logging.INFO, logger="sync")
+    album.run(stream=empty)
+    assert any("downloaded=0" in r.message and "pruned=2" in r.message for r in caplog.records)
+
+
+def test_sync_first_run_empty_manifest_no_files_to_prune(album, caplog):
+    """Fresh sync against an already-empty album: no prior files on disk,
+    no downloads, no prunes, no crash. Documents that the empty-album
+    branch handles pruned=0 identically to pruned=N — real production
+    scenario when a recipient boots a new frame before adding any photos."""
+    empty = dict(album.stream)
+    empty["photos"] = []
+    caplog.set_level(logging.INFO, logger="sync")
+    album.run(stream=empty)
+    assert os.listdir(album.output_dir) == []
+    assert any("downloaded=0" in r.message and "pruned=0" in r.message for r in caplog.records)
+
+
 def test_sync_filename_collision_yields_distinct_local_files(album):
     stream = _stream_fixture()
     stream["photos"].append(

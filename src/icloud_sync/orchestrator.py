@@ -45,6 +45,15 @@ def sync_album(
     os.makedirs(output_dir, exist_ok=True)
 
     photo_guids = [p["photoGuid"] for p in stream["photos"]]
+    if not photo_guids:
+        # Apple's webasseturls endpoint rejects an empty photoGuids list
+        # with HTTP 400 "Validation Failed", so skip the call entirely when
+        # the album is empty. The mirror-the-album contract still holds:
+        # any locally-cached managed files from a prior sync are evicted.
+        pruned = storage._prune_removed(output_dir, set())
+        log.info("done downloaded=0 skipped=0 pruned=%d output=%s", pruned, output_dir)
+        return
+
     asset_response = apple_api.fetch_asset_urls(shard, token, photo_guids)
     items = asset_response["items"]
     locations = asset_response["locations"]
