@@ -10,6 +10,7 @@ import logging
 import os
 import time
 
+import pytest
 from conftest import (
     _asset_urls_fixture,
     _large_album_stream,
@@ -312,3 +313,121 @@ def test_sync_autoprune_grows_by_two_evicts_two_oldest(tmp_path, monkeypatch):
     # Two files came off (the oldest, indices 0 and 1) and two came on (5, 6).
     assert len(final_names - initial_names) == 2
     assert len(initial_names - final_names) == 2
+
+
+# ---------- per-asset download resilience ----------------------------------
+
+
+def _two_photo_setup(tmp_path, monkeypatch):
+    """Two same-size assets under a comfortable budget, with a knob for
+    making specific downloads fail. Returns (output_dir, urls, install)."""
+    stream = _large_album_stream([100, 100])
+    asset_urls = _large_asset_urls(2)
+    output_dir = str(tmp_path / "photos")
+    monkeypatch.setattr(storage, "_disk_budget", lambda _dir, _buf: (10_000, 0, 0))
+    monkeypatch.setattr(apple_api, "_post_json", _MockPostJson(stream, asset_urls))
+
+    urls = {}
+    for i, photo in enumerate(stream["photos"]):
+        item = asset_urls["items"][photo["derivatives"]["2048"]["checksum"]]
+        urls[i] = apple_api.build_download_url(item, asset_urls["locations"])
+
+    def install(download_fn):
+        monkeypatch.setattr(apple_api, "download", download_fn)
+
+    return output_dir, urls, install
+
+
+def test_one_failed_download_does_not_abort_the_rest(tmp_path, monkeypatch, caplog):
+    """The whole point: an asset that 500s or times out costs that asset,
+    not the entire cycle. Previously any raise aborted the loop and skipped
+    the prune step entirely."""
+    output_dir, urls, install = _two_photo_setup(tmp_path, monkeypatch)
+
+    def flaky(url, dest_path):
+        if url == urls[0]:
+            raise RuntimeError("CDN said no")
+        with open(dest_path, "wb") as f:
+            f.write(b"\0" * 100)
+        return 100
+
+    install(flaky)
+    caplog.set_level(logging.INFO, logger="sync")
+    orchestrator.sync_album("https://www.icloud.com/sharedalbum/#BTEST", output_dir, 0.0, False)
+
+    assert len(os.listdir(output_dir)) == 1  # the healthy one still landed
+    assert any("downloaded=1 skipped=0 failed=1" in r.getMessage() for r in caplog.records)
+
+
+def test_failed_download_removes_the_partial_file(tmp_path, monkeypatch):
+    """A truncated asset would render as garbage on a slideshow and could
+    linger if its size happened to match on a later run. It gets deleted."""
+    output_dir, urls, install = _two_photo_setup(tmp_path, monkeypatch)
+
+    def partial_then_fail(url, dest_path):
+        with open(dest_path, "wb") as f:
+            f.write(b"\0" * 37)  # partial write lands on disk
+        if url == urls[0]:
+            raise RuntimeError("connection reset mid-stream")
+        with open(dest_path, "wb") as f:
+            f.write(b"\0" * 100)
+        return 100
+
+    install(partial_then_fail)
+    orchestrator.sync_album("https://www.icloud.com/sharedalbum/#BTEST", output_dir, 0.0, False)
+
+    remaining = os.listdir(output_dir)
+    assert len(remaining) == 1
+    assert os.path.getsize(os.path.join(output_dir, remaining[0])) == 100
+
+
+def test_failed_download_with_no_partial_file_is_handled(tmp_path, monkeypatch):
+    """Failure before any bytes are written (DNS, connect timeout) leaves
+    no file to clean up — the removal must not assume one exists."""
+    output_dir, urls, install = _two_photo_setup(tmp_path, monkeypatch)
+
+    def fail_before_writing(url, dest_path):
+        if url == urls[0]:
+            raise RuntimeError("could not connect")
+        with open(dest_path, "wb") as f:
+            f.write(b"\0" * 100)
+        return 100
+
+    install(fail_before_writing)
+    orchestrator.sync_album("https://www.icloud.com/sharedalbum/#BTEST", output_dir, 0.0, False)
+    assert len(os.listdir(output_dir)) == 1
+
+
+def test_all_downloads_failing_raises_as_systemic(tmp_path, monkeypatch):
+    """Every attempt failing means the link is down, not that one asset is
+    bad. Raising is what gives cli's fast-retry backoff its trigger."""
+    output_dir, _urls, install = _two_photo_setup(tmp_path, monkeypatch)
+    install(_raise_always)
+
+    with pytest.raises(RuntimeError, match="all 2 attempted downloads failed"):
+        orchestrator.sync_album("https://www.icloud.com/sharedalbum/#BTEST", output_dir, 0.0, False)
+
+
+def _raise_always(_url, _dest_path):
+    raise RuntimeError("network unreachable")
+
+
+def test_partial_failure_still_prunes_removed_assets(tmp_path, monkeypatch):
+    """Prune has to run even on a partially failed cycle, otherwise an
+    asset deleted from the album sticks around until a flawless run."""
+    output_dir, urls, install = _two_photo_setup(tmp_path, monkeypatch)
+    os.makedirs(output_dir, exist_ok=True)
+    orphan = os.path.join(output_dir, "IMG_9999__deadbeef.JPG")
+    with open(orphan, "wb") as f:
+        f.write(b"\0" * 10)
+
+    def flaky(url, dest_path):
+        if url == urls[0]:
+            raise RuntimeError("CDN said no")
+        with open(dest_path, "wb") as f:
+            f.write(b"\0" * 100)
+        return 100
+
+    install(flaky)
+    orchestrator.sync_album("https://www.icloud.com/sharedalbum/#BTEST", output_dir, 0.0, False)
+    assert not os.path.exists(orphan)

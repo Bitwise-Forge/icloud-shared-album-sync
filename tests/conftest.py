@@ -137,6 +137,23 @@ def _large_asset_urls(n):
     }
 
 
+@pytest.fixture(autouse=True)
+def reset_apple_api_timeouts():
+    """`apple_api` holds timeout policy and the sticky-escalation flag as
+    module state. Restore all three after every test so a test that
+    escalates can't leak that into the next one."""
+    saved = (
+        apple_api._api_timeout_seconds,
+        apple_api._download_timeout_seconds,
+        set(apple_api._escalated_keys),
+    )
+    yield
+    apple_api._api_timeout_seconds = saved[0]
+    apple_api._download_timeout_seconds = saved[1]
+    apple_api._escalated_keys.clear()
+    apple_api._escalated_keys.update(saved[2])
+
+
 @pytest.fixture
 def album(tmp_path, monkeypatch):
     """Bundle stream, asset_urls, output dir, and a `run` callable into
@@ -194,4 +211,7 @@ def main_env(monkeypatch, tmp_path):
     monkeypatch.setenv("LOG_LEVEL", "INFO")
     monkeypatch.delenv("STORAGE_BUFFER_PERCENT", raising=False)
     monkeypatch.delenv("AUTOPRUNE_ON_LOW_STORAGE", raising=False)
+    monkeypatch.delenv("APPLE_API_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("DOWNLOAD_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("RETRY_SLEEP_MINUTES", raising=False)
     return monkeypatch

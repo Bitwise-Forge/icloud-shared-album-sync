@@ -141,7 +141,18 @@ docker buildx rm isas-multi
 | `SYNC_INTERVAL_HOURS` | `0` | `0` = single-shot. `> 0` = daemon loop with sleep between syncs. |
 | `STORAGE_BUFFER_PERCENT` | `10` | Percentage of the output volume's total capacity to keep untouched. Float, 2-decimal precision, range `[0, 100)`. |
 | `AUTOPRUNE_ON_LOW_STORAGE` | `false` | If `true` and the album exceeds the budget, keep the newest slice that fits and prune older photos locally. If `false`, log an error and skip the run without touching disk. |
+| `APPLE_API_TIMEOUT_SECONDS` | `180` | Read timeout for Apple's manifest calls. Scales with album asset count, not bytes — ~17s at 103 assets, ~32s at 210. On timeout the ceiling doubles for one retry, sticky per `(host, endpoint)`. |
+| `DOWNLOAD_TIMEOUT_SECONDS` | `120` | Read timeout for a single asset download. Separate from the manifest timeout because large videos legitimately stream slowly. |
+| `RETRY_SLEEP_MINUTES` | `5` | Daemon-mode wait after a *failed* run instead of the full interval. Doubles per consecutive failure, capped at `SYNC_INTERVAL_HOURS`, reset on success. |
 | `LOG_LEVEL` | `INFO` | `DEBUG` shows skip decisions. |
+
+Timeout policy lives in `apple_api` as module state, installed once by
+`cli.main` via `apple_api.configure()`. It is deliberately *not* threaded
+through `sync_album`'s signature — `cli` stays the only module that reads
+and validates env vars, and the call chain stays free of transport
+plumbing. Tests reset that module state via the autouse
+`reset_apple_api_timeouts` fixture in `conftest.py`; any new module-level
+state in `apple_api` must be added there too.
 
 ## Coding conventions
 
