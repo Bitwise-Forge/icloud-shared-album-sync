@@ -11,6 +11,7 @@ import signal
 import sys
 import threading
 
+from . import apple_api
 from .orchestrator import sync_album
 
 log = logging.getLogger("sync")
@@ -36,6 +37,26 @@ def _env(name: str, default=None, required: bool = False) -> str:
     if required and not val:
         log.error("missing required env var: %s", name)
         sys.exit(2)
+    return val
+
+
+def _positive_float(name: str, default: str) -> float | None:
+    """Parse an env var that must be a number greater than zero.
+
+    Returns None on invalid input, having already logged the reason —
+    callers turn that into exit code 2. Zero is rejected rather than
+    treated as 'disabled' because every knob using this would mean
+    'never wait at all', which is never what an operator wants.
+    """
+    raw = _env(name, default)
+    try:
+        val = float(raw)
+    except ValueError:
+        log.error("%s must be numeric, got %r", name, raw)
+        return None
+    if val <= 0:
+        log.error("%s must be greater than 0, got %s", name, val)
+        return None
     return val
 
 
@@ -81,25 +102,68 @@ def main() -> int:
         return 2
     autoprune_on_low_storage = autoprune_raw == "true"
 
+    api_timeout = _positive_float(
+        "APPLE_API_TIMEOUT_SECONDS", str(apple_api.DEFAULT_API_TIMEOUT_SECONDS)
+    )
+    if api_timeout is None:
+        return 2
+
+    download_timeout = _positive_float(
+        "DOWNLOAD_TIMEOUT_SECONDS", str(apple_api.DEFAULT_DOWNLOAD_TIMEOUT_SECONDS)
+    )
+    if download_timeout is None:
+        return 2
+
+    retry_sleep_minutes = _positive_float("RETRY_SLEEP_MINUTES", "5")
+    if retry_sleep_minutes is None:
+        return 2
+
+    apple_api.configure(api_timeout, download_timeout)
+
     log.info(
-        "config buffer_percent=%s autoprune_on_low_storage=%s",
+        "config buffer_percent=%s autoprune_on_low_storage=%s "
+        "api_timeout=%.1fs download_timeout=%.1fs retry_sleep=%.1fmin",
         buffer_percent,
         autoprune_on_low_storage,
+        api_timeout,
+        download_timeout,
+        retry_sleep_minutes,
     )
 
     stop = threading.Event()
     _install_signal_handlers(stop)
 
+    consecutive_failures = 0
     while not stop.is_set():
         try:
             sync_album(url, output_dir, buffer_percent, autoprune_on_low_storage)
+            consecutive_failures = 0
         except Exception:
-            log.exception("sync failed")
+            consecutive_failures += 1
+            log.exception("sync failed (consecutive failures: %d)", consecutive_failures)
         if interval_hours <= 0:
             break
         interval_seconds = interval_hours * 3600
-        log.info("sleeping %.2fh until next sync", interval_hours)
-        if stop.wait(interval_seconds):
+        if consecutive_failures:
+            # A failed cycle shouldn't cost a full interval — on an hourly
+            # frame that turns a transient blip into an hour of stale
+            # photos. Back off exponentially so a persistent outage stops
+            # hammering Apple, and never wait longer than the configured
+            # interval would have.
+            sleep_seconds = min(
+                retry_sleep_minutes * 60 * 2 ** (consecutive_failures - 1),
+                interval_seconds,
+            )
+            log.warning(
+                "retrying in %.1fmin (failure %d) instead of the full %.2fh interval",
+                sleep_seconds / 60,
+                consecutive_failures,
+                interval_hours,
+            )
+        else:
+            sleep_seconds = interval_seconds
+            log.info("sleeping %.2fh until next sync", interval_hours)
+        if stop.wait(sleep_seconds):
             log.info("stop requested during sleep, exiting")
             break
 

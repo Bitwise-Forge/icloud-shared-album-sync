@@ -4,6 +4,7 @@ and STORAGE_BUFFER_PERCENT / AUTOPRUNE_ON_LOW_STORAGE parsing."""
 
 import logging
 import threading
+from typing import ClassVar
 
 import pytest
 
@@ -314,3 +315,134 @@ def test_main_rejects_non_boolean_autoprune(main_env, bad):
     main_env.setenv("AUTOPRUNE_ON_LOW_STORAGE", bad)
     main_env.setattr(cli, "sync_album", lambda *a, **kw: None)
     assert cli.main() == 2
+
+
+# ---------- timeout / retry env parsing ------------------------------------
+
+
+def test_main_configures_apple_api_with_defaults(main_env):
+    seen = {}
+    main_env.setattr(
+        cli.apple_api,
+        "configure",
+        lambda api, dl: seen.update(api=api, dl=dl),
+    )
+    main_env.setattr(cli, "sync_album", lambda *a, **kw: None)
+    cli.main()
+    assert seen["api"] == cli.apple_api.DEFAULT_API_TIMEOUT_SECONDS
+    assert seen["dl"] == cli.apple_api.DEFAULT_DOWNLOAD_TIMEOUT_SECONDS
+
+
+def test_main_passes_overridden_timeouts_through(main_env):
+    main_env.setenv("APPLE_API_TIMEOUT_SECONDS", "300")
+    main_env.setenv("DOWNLOAD_TIMEOUT_SECONDS", "90")
+    seen = {}
+    main_env.setattr(
+        cli.apple_api,
+        "configure",
+        lambda api, dl: seen.update(api=api, dl=dl),
+    )
+    main_env.setattr(cli, "sync_album", lambda *a, **kw: None)
+    cli.main()
+    assert seen == {"api": 300.0, "dl": 90.0}
+
+
+@pytest.mark.parametrize(
+    "var",
+    ["APPLE_API_TIMEOUT_SECONDS", "DOWNLOAD_TIMEOUT_SECONDS", "RETRY_SLEEP_MINUTES"],
+)
+@pytest.mark.parametrize("bad", ["banana", "0", "-5"])
+def test_main_rejects_bad_timeout_values(main_env, var, bad):
+    main_env.setenv(var, bad)
+    main_env.setattr(cli, "sync_album", lambda *a, **kw: None)
+    assert cli.main() == 2
+
+
+def test_positive_float_returns_parsed_value(monkeypatch):
+    monkeypatch.setenv("EXAMPLE_TIMEOUT", "12.5")
+    assert cli._positive_float("EXAMPLE_TIMEOUT", "1") == 12.5
+
+
+def test_positive_float_falls_back_to_default(monkeypatch):
+    monkeypatch.delenv("EXAMPLE_TIMEOUT", raising=False)
+    assert cli._positive_float("EXAMPLE_TIMEOUT", "8") == 8.0
+
+
+# ---------- failed-run backoff ---------------------------------------------
+
+
+class _RecordingWaitEvent(threading.Event):
+    """Captures every sleep duration the loop asks for, then stops the
+    loop after a fixed number of cycles. State is class-level because
+    cli.main constructs the Event itself — the test never holds the
+    instance and can only reach the recording through the class."""
+
+    waits: ClassVar[list] = []
+    stop_after: ClassVar[int] = 1
+
+    def __init__(self):
+        super().__init__()
+        type(self).waits = []
+
+    def wait(self, timeout=None):
+        type(self).waits.append(timeout)
+        return len(type(self).waits) >= type(self).stop_after
+
+
+def test_failed_run_sleeps_the_retry_interval_not_the_full_one(main_env, caplog):
+    """An hourly frame shouldn't lose a full hour to one bad cycle."""
+    main_env.setenv("SYNC_INTERVAL_HOURS", "1")
+    main_env.setenv("RETRY_SLEEP_MINUTES", "5")
+    _RecordingWaitEvent.stop_after = 1
+    main_env.setattr(cli.threading, "Event", _RecordingWaitEvent)
+    main_env.setattr(cli, "_configure_logging", lambda _level: None)
+
+    def failing(*_a, **_kw):
+        raise RuntimeError("boom")
+
+    main_env.setattr(cli, "sync_album", failing)
+    caplog.set_level(logging.WARNING, logger="sync")
+
+    assert cli.main() == 0
+    assert _RecordingWaitEvent.waits == [300.0]  # 5 minutes, not 3600s
+    assert any("retrying in 5.0min (failure 1)" in r.getMessage() for r in caplog.records)
+
+
+def test_consecutive_failures_back_off_exponentially_and_cap_at_the_interval(main_env):
+    """Backoff has to stop hammering Apple on a sustained outage, and must
+    never wait longer than the normal interval would have."""
+    main_env.setenv("SYNC_INTERVAL_HOURS", "1")  # 3600s cap
+    main_env.setenv("RETRY_SLEEP_MINUTES", "5")
+    _RecordingWaitEvent.stop_after = 5
+    main_env.setattr(cli.threading, "Event", _RecordingWaitEvent)
+    main_env.setattr(cli, "_configure_logging", lambda _level: None)
+
+    def failing(*_a, **_kw):
+        raise RuntimeError("boom")
+
+    main_env.setattr(cli, "sync_album", failing)
+    assert cli.main() == 0
+    # 5, 10, 20, 40 minutes... then capped by the 1h interval.
+    assert _RecordingWaitEvent.waits == [300.0, 600.0, 1200.0, 2400.0, 3600.0]
+
+
+def test_a_successful_run_resets_the_failure_counter(main_env):
+    """Recovery should restore the normal cadence immediately rather than
+    leaving the frame stuck on a long backoff."""
+    main_env.setenv("SYNC_INTERVAL_HOURS", "1")
+    main_env.setenv("RETRY_SLEEP_MINUTES", "5")
+    _RecordingWaitEvent.stop_after = 3
+    main_env.setattr(cli.threading, "Event", _RecordingWaitEvent)
+    main_env.setattr(cli, "_configure_logging", lambda _level: None)
+
+    calls = {"n": 0}
+
+    def sometimes_failing(*_a, **_kw):
+        calls["n"] += 1
+        if calls["n"] in (1, 3):
+            raise RuntimeError("boom")
+
+    main_env.setattr(cli, "sync_album", sometimes_failing)
+    assert cli.main() == 0
+    # fail -> 5min, succeed -> full hour, fail again -> back to 5min (not 10).
+    assert _RecordingWaitEvent.waits == [300.0, 3600.0, 300.0]

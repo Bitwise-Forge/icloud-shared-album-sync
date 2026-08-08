@@ -117,6 +117,7 @@ def sync_album(
 
     downloaded = 0
     skipped = 0
+    failed = 0
     expected_names = set()
     for c in keep_set:
         filename = c["filename"]
@@ -129,7 +130,21 @@ def sync_album(
             skipped += 1
             continue
 
-        bytes_written = apple_api.download(c["download_url"], dest)
+        try:
+            bytes_written = apple_api.download(c["download_url"], dest)
+        except Exception:
+            # One unreachable asset shouldn't cost the whole run. Everything
+            # after it in keep_set is still worth fetching, and the prune
+            # step below still needs to run.
+            failed += 1
+            log.warning("download failed for %s; retrying next cycle", filename, exc_info=True)
+            # Drop any partial write. A truncated file would both render as
+            # garbage on a slideshow and satisfy nothing on re-run; removing
+            # it lets the size-mismatch check re-fetch cleanly.
+            if os.path.exists(dest):
+                os.remove(dest)
+            continue
+
         downloaded += 1
         photo = c["photo"]
         contrib = photo.get("contributorFullName", "?")
@@ -145,9 +160,19 @@ def sync_album(
 
     pruned = storage._prune_removed(output_dir, expected_names)
     log.info(
-        "done downloaded=%d skipped=%d pruned=%d output=%s",
+        "done downloaded=%d skipped=%d failed=%d pruned=%d output=%s",
         downloaded,
         skipped,
+        failed,
         pruned,
         output_dir,
     )
+
+    # Isolated failures are absorbed above, but if every attempted download
+    # failed the cause is systemic (link down, DNS, expired signed URLs)
+    # rather than per-asset. Raising hands the daemon its fast-retry path
+    # instead of letting it sleep out a full interval on a dead network.
+    if failed and downloaded == 0:
+        raise RuntimeError(
+            f"all {failed} attempted downloads failed; treating as a systemic failure"
+        )

@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-08
+
+Fix: large albums silently stopped syncing. Apple's manifest calls scale
+with asset count, and a 210-asset album consistently exceeded the
+hardcoded 30-second timeout — every cycle, on every frame serving that
+album.
+
+### Fixed
+
+- **Large-album syncs no longer stall silently.** Apple's `webstream`
+  latency scales with the album's *asset count*, not its byte volume.
+  Measured against live albums: 103 assets → ~17s, 210 assets → ~32s,
+  against a hardcoded 30s ceiling. Past roughly 195 assets the call
+  failed on every cycle with `httpx.ReadTimeout`, aborting the run
+  before anything downloaded. Nothing downstream showed a symptom — a
+  photo frame kept cycling its existing cache while new contributions
+  silently never arrived. The base ceiling is now 180s and configurable.
+- **A failed asset download no longer aborts the whole cycle.** Any
+  exception from a single download ended the run, skipping every
+  remaining asset *and* the prune step, so an asset deleted from the
+  album could linger indefinitely. Failures are now logged per asset,
+  the partial file is removed, and the cycle continues.
+- **Failed runs no longer cost a full interval.** A run that raised sent
+  the daemon straight into `SYNC_INTERVAL_HOURS` of sleep — an hour of
+  staleness on an hourly frame for what may have been a momentary blip.
+
+### Added
+
+- `APPLE_API_TIMEOUT_SECONDS` (default `180`): read timeout for Apple's
+  manifest calls. Covers ~1200 assets by the observed linear trend.
+- `DOWNLOAD_TIMEOUT_SECONDS` (default `120`): read timeout for a single
+  asset download, separate from the manifest timeout because large
+  videos genuinely take time to stream.
+- `RETRY_SLEEP_MINUTES` (default `5`): in daemon mode, how long to wait
+  after a failed run before retrying. Doubles per consecutive failure,
+  capped at `SYNC_INTERVAL_HOURS`, reset by the first success.
+- One-shot timeout escalation. A manifest call that times out is retried
+  exactly once at double the ceiling; a second timeout gives up rather
+  than doubling again. Escalation is sticky per `(host, endpoint)` for
+  the process lifetime — an album too slow for the base ceiling will be
+  too slow next cycle, so later calls skip the doomed base attempt — and
+  clears automatically once that endpoint answers inside the base
+  ceiling. Keyed per endpoint because the three calls have very
+  different profiles against the same album (shard probe ~0.8s,
+  `webstream` ~32s, `webasseturls` ~6.5s); shared state let a fast call
+  clear the escalation `webstream` depended on, causing it to re-time-out
+  and re-escalate every cycle.
+- Early-warning log line when any manifest call consumes more than half
+  its ceiling, so a growing album surfaces in the logs while it is still
+  succeeding rather than after it starts failing.
+- Systemic-failure detection: a cycle where every attempted download
+  failed raises rather than reporting success, which routes it to the
+  fast-retry backoff instead of a full-interval sleep.
+
+### Changed
+
+- Download timeouts are now a single configurable read window rather
+  than the previous split 60s-total / 120s-read pair, which could abort a
+  large video that was streaming healthily.
+
 ## [0.2.1] - 2026-07-22
 
 Fix: emptied-album sync crashed at the `webasseturls` call instead of
@@ -121,7 +181,8 @@ Initial public release.
 - Only public Shared Albums are supported. Private (auth-required) albums are
   out of scope by design.
 
-[Unreleased]: https://github.com/Bitwise-Forge/icloud-shared-album-sync/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Bitwise-Forge/icloud-shared-album-sync/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Bitwise-Forge/icloud-shared-album-sync/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Bitwise-Forge/icloud-shared-album-sync/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Bitwise-Forge/icloud-shared-album-sync/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Bitwise-Forge/icloud-shared-album-sync/releases/tag/v0.1.0

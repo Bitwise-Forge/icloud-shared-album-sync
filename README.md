@@ -57,6 +57,9 @@ services:
 | `SYNC_INTERVAL_HOURS` | `0` | If `> 0`, run continuously and sleep this many hours between syncs. If `0` (the default), sync once and exit. |
 | `STORAGE_BUFFER_PERCENT` | `10` | Reserves this percentage of the output volume's total capacity as untouchable headroom for the OS, logs, and anything else sharing the disk. Accepts a float (e.g. `7.25`), rounded to two decimal places. Range `[0, 100)`. |
 | `AUTOPRUNE_ON_LOW_STORAGE` | `false` | If `false` and the album would exceed the available budget, the sync logs an error and skips the run — nothing on disk is touched. If `true`, the sync keeps the newest slice of the album that fits under the budget and prunes older photos locally to make room. Newest is defined by upload time (`batchDateCreated`), then capture time (`dateCreated`), then `photoGuid` as a deterministic tiebreaker. |
+| `APPLE_API_TIMEOUT_SECONDS` | `180` | Read timeout for Apple's manifest calls (`webstream`, `webasseturls`). These scale with the album's *asset count*, not its byte volume — a 210-asset album takes ~32s to answer `webstream`, a 103-asset album ~17s — so this needs headroom as the album grows. If a call still times out, the ceiling is doubled and the call is retried exactly once; see [Timeouts and retries](#timeouts-and-retries). |
+| `DOWNLOAD_TIMEOUT_SECONDS` | `120` | Read timeout for a single asset download. Large videos genuinely take time to stream, so this is separate from the manifest timeout. |
+| `RETRY_SLEEP_MINUTES` | `5` | In daemon mode (`SYNC_INTERVAL_HOURS > 0`), how long to wait after a *failed* run before trying again, instead of sleeping out the full interval. Doubles on each consecutive failure and never exceeds `SYNC_INTERVAL_HOURS`. Resets on the first success. |
 | `LOG_LEVEL` | `INFO` | Python logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR`. |
 
 ## How it works
@@ -71,6 +74,25 @@ Apple's Shared Streams API is a short conversation:
 Files land under the filename Apple assigns, with a short hash of the asset's unique ID appended before the extension: `IMG_5744.JPG` → `IMG_5744__a1b2c3d4.JPG`. That hash is deterministic per asset, which does two things: it prevents collisions when two contributors happen to upload files with the same name, and it marks the file as "managed by this tool" so pruning can safely clean up without touching anything else in the folder.
 
 EXIF, GPS, and iPhone-model metadata come through untouched inside Apple's shared-album compression. Re-runs are idempotent — assets whose local size matches the manifest are skipped, so a scheduled sync stays fast in steady state.
+
+## Timeouts and retries
+
+Apple's manifest endpoints get slower as an album grows, and the growth is in *asset count*, not bytes. Measured against real albums: `webstream` answers in ~17s for 103 assets and ~32s for 210, while the assets themselves total over 200 MB in both cases. An album that syncs fine today can cross a fixed timeout months later, purely by accumulating photos.
+
+That failure is quiet by nature — the sync aborts, the local folder keeps whatever it already had, and nothing downstream looks broken. Three mechanisms address it:
+
+**A generous, configurable ceiling.** `APPLE_API_TIMEOUT_SECONDS` defaults to `180`, which covers roughly 1200 assets by the observed linear trend.
+
+**One-shot escalation.** If a manifest call times out anyway, the ceiling is doubled and the call retried exactly once. A second timeout gives up rather than doubling again. The escalation is *sticky* per endpoint for the life of the process: an album too slow for the base ceiling will be too slow next cycle too, so subsequent calls start at the raised ceiling instead of re-paying the failed attempt every time. It clears itself as soon as that endpoint answers inside the base ceiling again. Escalation fires only on timeouts — not on HTTP errors, where a bigger budget would change nothing.
+
+**Early warning.** Any manifest call consuming more than half its ceiling logs a warning while it's still succeeding:
+
+```
+WARNING slow Apple response: 32.8s of a 40.0s ceiling (82%) for webstream —
+album growth pushes this toward a timeout; consider raising APPLE_API_TIMEOUT_SECONDS
+```
+
+Separately, individual asset downloads no longer abort the run. A failed download is logged, its partial file removed, and the cycle continues to the remaining assets and the prune step; the asset retries next cycle. If *every* attempted download fails, that's treated as systemic (link down, DNS, expired signed URLs) and raises, which triggers the `RETRY_SLEEP_MINUTES` fast-retry path instead of sleeping out a full interval.
 
 ## About the Apple API
 
@@ -132,6 +154,9 @@ Coverage groups:
 
 - **Pure logic:** URL parsing, best-derivative selection (photo, video, edge cases), collision-proof local filename generation, the managed-file naming regex.
 - **Shard resolution:** happy-path 200, 330 redirect via response header, missing-host error path.
+- **Timeout policy:** configured ceilings reach httpx; a slow-but-successful call warns past half its budget; a timeout escalates once and retries at double; a second timeout raises without a third attempt; escalation persists across calls while the endpoint stays slow and clears when it fits the base ceiling again; escalation is isolated per host and endpoint, so neither the fast shard probe nor `webasseturls` can clear what `webstream` needs.
+- **Download resilience:** one failed asset doesn't abort the cycle; partial files are removed; pruning still runs on a partially failed cycle; an all-downloads-failed cycle raises as systemic.
+- **Daemon backoff:** a failed run sleeps `RETRY_SLEEP_MINUTES` rather than the full interval, doubles on consecutive failures, caps at the interval, and resets on the first success.
 - **End-to-end `sync_album`:** creates the output directory; downloads every asset at the manifest's declared size; skips unchanged files on re-run; re-downloads on size mismatch; prunes orphans that match the tool's naming pattern; leaves manual (non-matching) files alone; handles filename collisions across contributors; prunes assets removed from the album on the next sync; handles an empty manifest; when `AUTOPRUNE_ON_LOW_STORAGE=true`, keeps the newest slice that fits under the disk budget and evicts older photos; when `false`, refuses to touch disk on over-budget runs.
 
 ## What it doesn't do (yet)
